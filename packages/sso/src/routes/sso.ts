@@ -1,3 +1,4 @@
+import { base64 } from "@better-auth/utils/base64";
 import { BetterFetchError, betterFetch } from "@better-fetch/fetch";
 import type { User, Verification } from "better-auth";
 import {
@@ -1928,6 +1929,21 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 					message: "Invalid SAML configuration",
 				});
 			}
+
+			const isTrusted = (
+				url: string,
+				settings?: { allowRelativePaths: boolean },
+			) => ctx.context.isTrustedOrigin(url, settings);
+
+			const safeErrorUrl = getSafeRedirectUrl(
+				relayState?.errorURL ||
+					relayState?.callbackURL ||
+					parsedSamlConfig.callbackUrl,
+				currentCallbackPath,
+				appOrigin,
+				isTrusted,
+			);
+
 			const idpData = parsedSamlConfig.idpMetadata;
 			let idp: IdentityProvider | null = null;
 
@@ -2000,8 +2016,8 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 			} catch (error) {
 				ctx.context.logger.error("SAML response validation failed", {
 					error,
-					decodedResponse: Buffer.from(SAMLResponse, "base64").toString(
-						"utf-8",
+					decodedResponse: new TextDecoder().decode(
+						base64.decode(SAMLResponse),
 					),
 				});
 				throw new APIError("BAD_REQUEST", {
@@ -2052,12 +2068,8 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 							"SAML InResponseTo validation failed: unknown or expired request ID",
 							{ inResponseTo, providerId: provider.providerId },
 						);
-						const redirectUrl =
-							relayState?.callbackURL ||
-							parsedSamlConfig.callbackUrl ||
-							ctx.context.baseURL;
 						throw ctx.redirect(
-							`${redirectUrl}?error=invalid_saml_response&error_description=Unknown+or+expired+request+ID`,
+							`${safeErrorUrl}?error=invalid_saml_response&error_description=Unknown+or+expired+request+ID`,
 						);
 					}
 
@@ -2074,12 +2086,8 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 						await ctx.context.internalAdapter.deleteVerificationByIdentifier(
 							`${AUTHN_REQUEST_KEY_PREFIX}${inResponseTo}`,
 						);
-						const redirectUrl =
-							relayState?.callbackURL ||
-							parsedSamlConfig.callbackUrl ||
-							ctx.context.baseURL;
 						throw ctx.redirect(
-							`${redirectUrl}?error=invalid_saml_response&error_description=Provider+mismatch`,
+							`${safeErrorUrl}?error=invalid_saml_response&error_description=Provider+mismatch`,
 						);
 					}
 
@@ -2091,12 +2099,8 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 						"SAML IdP-initiated SSO rejected: InResponseTo missing and allowIdpInitiated is false",
 						{ providerId: provider.providerId },
 					);
-					const redirectUrl =
-						relayState?.callbackURL ||
-						parsedSamlConfig.callbackUrl ||
-						ctx.context.baseURL;
 					throw ctx.redirect(
-						`${redirectUrl}?error=unsolicited_response&error_description=IdP-initiated+SSO+not+allowed`,
+						`${safeErrorUrl}?error=unsolicited_response&error_description=IdP-initiated+SSO+not+allowed`,
 					);
 				}
 			}
@@ -2146,12 +2150,8 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 							providerId: provider.providerId,
 						},
 					);
-					const redirectUrl =
-						relayState?.callbackURL ||
-						parsedSamlConfig.callbackUrl ||
-						ctx.context.baseURL;
 					throw ctx.redirect(
-						`${redirectUrl}?error=replay_detected&error_description=SAML+assertion+has+already+been+used`,
+						`${safeErrorUrl}?error=replay_detected&error_description=SAML+assertion+has+already+been+used`,
 					);
 				}
 
@@ -2222,10 +2222,12 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 					!!(provider as { domainVerified?: boolean }).domainVerified &&
 					validateEmailDomain(userInfo.email as string, provider.domain));
 
-			const callbackUrl =
-				relayState?.callbackURL ||
-				parsedSamlConfig.callbackUrl ||
-				ctx.context.baseURL;
+			const safeCallbackUrl = getSafeRedirectUrl(
+				relayState?.callbackURL || parsedSamlConfig.callbackUrl,
+				currentCallbackPath,
+				appOrigin,
+				isTrusted,
+			);
 
 			const result = await handleOAuthUserInfo(ctx, {
 				userInfo: {
@@ -2240,14 +2242,14 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 					accessToken: "",
 					refreshToken: "",
 				},
-				callbackURL: callbackUrl,
+				callbackURL: safeCallbackUrl,
 				disableSignUp: options?.disableImplicitSignUp,
 				isTrustedProvider,
 			});
 
 			if (result.error) {
 				throw ctx.redirect(
-					`${callbackUrl}?error=${result.error.split(" ").join("_")}`,
+					`${safeCallbackUrl}?error=${result.error.split(" ").join("_")}`,
 				);
 			}
 
@@ -2276,14 +2278,7 @@ export const callbackSSOSAML = (options?: SSOOptions) => {
 			});
 
 			await setSessionCookie(ctx, { session, user });
-
-			const safeRedirectUrl = getSafeRedirectUrl(
-				relayState?.callbackURL || parsedSamlConfig.callbackUrl,
-				currentCallbackPath,
-				appOrigin,
-				(url, settings) => ctx.context.isTrustedOrigin(url, settings),
-			);
-			throw ctx.redirect(safeRedirectUrl);
+			throw ctx.redirect(safeCallbackUrl);
 		},
 	);
 };
@@ -2404,6 +2399,23 @@ export const acsEndpoint = (options?: SSOOptions) => {
 			}
 
 			const parsedSamlConfig = provider.samlConfig;
+
+			const isTrusted = (
+				url: string,
+				settings?: { allowRelativePaths: boolean },
+			) => ctx.context.isTrustedOrigin(url, settings);
+
+			// Compute a safe error redirect URL once, reused by all error paths.
+			// Prefers errorURL from relay state, falls back to callbackURL, then provider config, then baseURL.
+			const safeErrorUrl = getSafeRedirectUrl(
+				relayState?.errorURL ||
+					relayState?.callbackURL ||
+					parsedSamlConfig.callbackUrl,
+				currentCallbackPath,
+				appOrigin,
+				isTrusted,
+			);
+
 			// Configure SP and IdP
 			const sp = saml.ServiceProvider({
 				entityID:
@@ -2448,16 +2460,12 @@ export const acsEndpoint = (options?: SSOOptions) => {
 				validateSingleAssertion(SAMLResponse);
 			} catch (error) {
 				if (error instanceof APIError) {
-					const redirectUrl =
-						relayState?.callbackURL ||
-						parsedSamlConfig.callbackUrl ||
-						ctx.context.baseURL;
 					const errorCode =
 						error.body?.code === "SAML_MULTIPLE_ASSERTIONS"
 							? "multiple_assertions"
 							: "no_assertion";
 					throw ctx.redirect(
-						`${redirectUrl}?error=${errorCode}&error_description=${encodeURIComponent(error.message)}`,
+						`${safeErrorUrl}?error=${errorCode}&error_description=${encodeURIComponent(error.message)}`,
 					);
 				}
 				throw error;
@@ -2479,8 +2487,8 @@ export const acsEndpoint = (options?: SSOOptions) => {
 			} catch (error) {
 				ctx.context.logger.error("SAML response validation failed", {
 					error,
-					decodedResponse: Buffer.from(SAMLResponse, "base64").toString(
-						"utf-8",
+					decodedResponse: new TextDecoder().decode(
+						base64.decode(SAMLResponse),
 					),
 				});
 				throw new APIError("BAD_REQUEST", {
@@ -2533,12 +2541,8 @@ export const acsEndpoint = (options?: SSOOptions) => {
 							"SAML InResponseTo validation failed: unknown or expired request ID",
 							{ inResponseTo: inResponseToAcs, providerId },
 						);
-						const redirectUrl =
-							relayState?.callbackURL ||
-							parsedSamlConfig.callbackUrl ||
-							ctx.context.baseURL;
 						throw ctx.redirect(
-							`${redirectUrl}?error=invalid_saml_response&error_description=Unknown+or+expired+request+ID`,
+							`${safeErrorUrl}?error=invalid_saml_response&error_description=Unknown+or+expired+request+ID`,
 						);
 					}
 
@@ -2554,12 +2558,8 @@ export const acsEndpoint = (options?: SSOOptions) => {
 						await ctx.context.internalAdapter.deleteVerificationByIdentifier(
 							`${AUTHN_REQUEST_KEY_PREFIX}${inResponseToAcs}`,
 						);
-						const redirectUrl =
-							relayState?.callbackURL ||
-							parsedSamlConfig.callbackUrl ||
-							ctx.context.baseURL;
 						throw ctx.redirect(
-							`${redirectUrl}?error=invalid_saml_response&error_description=Provider+mismatch`,
+							`${safeErrorUrl}?error=invalid_saml_response&error_description=Provider+mismatch`,
 						);
 					}
 
@@ -2571,19 +2571,15 @@ export const acsEndpoint = (options?: SSOOptions) => {
 						"SAML IdP-initiated SSO rejected: InResponseTo missing and allowIdpInitiated is false",
 						{ providerId },
 					);
-					const redirectUrl =
-						relayState?.callbackURL ||
-						parsedSamlConfig.callbackUrl ||
-						ctx.context.baseURL;
 					throw ctx.redirect(
-						`${redirectUrl}?error=unsolicited_response&error_description=IdP-initiated+SSO+not+allowed`,
+						`${safeErrorUrl}?error=unsolicited_response&error_description=IdP-initiated+SSO+not+allowed`,
 					);
 				}
 			}
 
 			// Assertion Replay Protection
-			const samlContentAcs = Buffer.from(SAMLResponse, "base64").toString(
-				"utf-8",
+			const samlContentAcs = new TextDecoder().decode(
+				base64.decode(SAMLResponse),
 			);
 			const assertionIdAcs = extractAssertionId(samlContentAcs);
 
@@ -2626,12 +2622,8 @@ export const acsEndpoint = (options?: SSOOptions) => {
 							providerId,
 						},
 					);
-					const redirectUrl =
-						relayState?.callbackURL ||
-						parsedSamlConfig.callbackUrl ||
-						ctx.context.baseURL;
 					throw ctx.redirect(
-						`${redirectUrl}?error=replay_detected&error_description=SAML+assertion+has+already+been+used`,
+						`${safeErrorUrl}?error=replay_detected&error_description=SAML+assertion+has+already+been+used`,
 					);
 				}
 
@@ -2703,10 +2695,12 @@ export const acsEndpoint = (options?: SSOOptions) => {
 					!!(provider as { domainVerified?: boolean }).domainVerified &&
 					validateEmailDomain(userInfo.email as string, provider.domain));
 
-			const callbackUrl =
-				relayState?.callbackURL ||
-				parsedSamlConfig.callbackUrl ||
-				ctx.context.baseURL;
+			const safeCallbackUrl = getSafeRedirectUrl(
+				relayState?.callbackURL || parsedSamlConfig.callbackUrl,
+				currentCallbackPath,
+				appOrigin,
+				isTrusted,
+			);
 
 			const result = await handleOAuthUserInfo(ctx, {
 				userInfo: {
@@ -2721,14 +2715,14 @@ export const acsEndpoint = (options?: SSOOptions) => {
 					accessToken: "",
 					refreshToken: "",
 				},
-				callbackURL: callbackUrl,
+				callbackURL: safeCallbackUrl,
 				disableSignUp: options?.disableImplicitSignUp,
 				isTrustedProvider,
 			});
 
 			if (result.error) {
 				throw ctx.redirect(
-					`${callbackUrl}?error=${result.error.split(" ").join("_")}`,
+					`${safeCallbackUrl}?error=${result.error.split(" ").join("_")}`,
 				);
 			}
 
@@ -2757,13 +2751,7 @@ export const acsEndpoint = (options?: SSOOptions) => {
 			});
 
 			await setSessionCookie(ctx, { session, user });
-			const safeRedirectUrl = getSafeRedirectUrl(
-				relayState?.callbackURL || parsedSamlConfig.callbackUrl,
-				currentCallbackPath,
-				appOrigin,
-				(url, settings) => ctx.context.isTrustedOrigin(url, settings),
-			);
-			throw ctx.redirect(safeRedirectUrl);
+			throw ctx.redirect(safeCallbackUrl);
 		},
 	);
 };
