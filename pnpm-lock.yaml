@@ -13,7 +13,7 @@ catalogs:
       specifier: 1.1.21
       version: 1.1.21
     better-call:
-      specifier: 1.3.2
+      specifier: https://pkg.pr.new/better-auth/better-call@109
       version: 1.3.2
     tsdown:
       specifier: ^0.20.3
@@ -1349,7 +1349,7 @@ importers:
         version: 5.22.0(prisma@5.22.0)
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       defu:
         specifier: ^6.1.4
         version: 6.1.4
@@ -1589,7 +1589,7 @@ importers:
         version: 1.1.21
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       jose:
         specifier: ^6.1.0
         version: 6.1.3
@@ -1631,7 +1631,7 @@ importers:
         version: 1.1.21
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       conf:
         specifier: ^15.0.2
         version: 15.1.0
@@ -1665,7 +1665,7 @@ importers:
         version: 1.1.21
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -1768,7 +1768,7 @@ importers:
         version: 1.1.21
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       jose:
         specifier: ^6.1.0
         version: 6.1.3
@@ -1808,7 +1808,7 @@ importers:
         version: 13.2.2
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       nanostores:
         specifier: ^1.0.1
         version: 1.1.0
@@ -1879,7 +1879,7 @@ importers:
         version: link:../better-auth
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -1929,7 +1929,7 @@ importers:
         version: link:../better-auth
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       body-parser:
         specifier: ^2.2.2
         version: 2.2.2
@@ -1960,7 +1960,7 @@ importers:
         version: link:../better-auth
       better-call:
         specifier: 'catalog:'
-        version: 1.3.2(zod@4.3.6)
+        version: https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6)
       stripe:
         specifier: ^20.2.0
         version: 20.2.0(@types/node@25.2.3)
@@ -8652,6 +8652,15 @@ packages:
 
   better-call@1.3.2:
     resolution: {integrity: sha512-4cZIfrerDsNTn3cm+MhLbUePN0gdwkhSXEuG7r/zuQ8c/H7iU0/jSK5TD3FW7U0MgKHce/8jGpPYNO4Ve+4NBw==}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  better-call@https://pkg.pr.new/better-auth/better-call@109:
+    resolution: {integrity: sha512-odqmKIeedbb245/8qh4a57ZnGfNVq4nLoTJ3212uivFgomgx/YqONYUGJ9HSdT+5RpK+WegiFudAejzraPVE6g==, tarball: https://pkg.pr.new/better-auth/better-call@109}
+    version: 1.3.2
     peerDependencies:
       zod: ^4.0.0
     peerDependenciesMeta:
@@ -19928,7 +19937,8 @@ snapshots:
 
   '@noble/ciphers@2.1.1': {}
 
-  '@noble/hashes@1.8.0': {}
+  '@noble/hashes@1.8.0':
+    optional: true
 
   '@noble/hashes@2.0.1': {}
 
@@ -20119,6 +20129,7 @@ snapshots:
   '@orama/cuid2@2.2.3':
     dependencies:
       '@noble/hashes': 1.8.0
+    optional: true
 
   '@orama/orama@3.1.18': {}
 
@@ -20127,6 +20138,7 @@ snapshots:
       '@orama/cuid2': 2.2.3
       '@orama/orama': 3.1.18
       lodash: 4.17.23
+    optional: true
 
   '@oxc-project/types@0.112.0': {}
 
@@ -24301,6 +24313,15 @@ snapshots:
       validator: 13.15.15
 
   better-call@1.3.2(zod@4.3.6):
+    dependencies:
+      '@better-auth/utils': 0.3.1
+      '@better-fetch/fetch': 1.1.21
+      rou3: 0.7.12
+      set-cookie-parser: 3.0.1
+    optionalDependencies:
+      zod: 4.3.6
+
+  better-call@https://pkg.pr.new/better-auth/better-call@109(zod@4.3.6):
     dependencies:
       '@better-auth/utils': 0.3.1
       '@better-fetch/fetch': 1.1.21
