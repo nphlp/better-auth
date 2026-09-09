@@ -1074,7 +1074,7 @@ export const drizzleAdapter = (db: DB, config: DrizzleAdapterConfig) => {
 					const updated = await db
 						.update(schemaModel)
 						.set(assignments)
-						.where(inArray(idColumn, targetIds))
+						.where(and(inArray(idColumn, targetIds), ...clause))
 						.returning();
 					return (updated[0] as any) ?? null;
 				},
