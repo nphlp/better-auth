@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { getAuthTables, getAuthTablesWithResolvedIndexes } from "../get-tables";
+import type { User } from "../schema/user";
 import type { SecondaryStorage } from "../type";
 
 const secondaryStorageStub: SecondaryStorage = {
@@ -405,4 +406,19 @@ describe("email change strategy fields", () => {
 			fieldName: "pending_email_request_id",
 		});
 	});
+});
+
+/** @see https://github.com/better-auth/better-auth/pull/8916 */
+it("infers pending email for a separately declared mutable configuration", () => {
+	const changeEmail = {
+		enabled: true,
+		strategy: "verification-table" as const,
+	};
+	expectTypeOf(changeEmail.enabled).toEqualTypeOf<boolean>();
+	expectTypeOf<
+		User<{ changeEmail: typeof changeEmail }>["pendingEmail"]
+	>().toEqualTypeOf<string | null | undefined>();
+	expect(
+		getAuthTables({ user: { changeEmail } }).user?.fields.pendingEmail,
+	).toBeDefined();
 });
