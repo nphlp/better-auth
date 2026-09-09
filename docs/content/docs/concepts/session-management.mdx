@@ -603,3 +603,9 @@ export const auth = betterAuth({
     ],
 });
 ```
+
+### Custom session failures
+
+The custom-session plugin preserves session lookup errors. A storage failure returns the native
+error status instead of a successful anonymous response. An absent or revoked session still
+returns `null`. Failed lookups do not invoke the session decorator or clear authentication cookies.

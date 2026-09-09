@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createAuthClient } from "../../client";
 import { parseSetCookieHeader } from "../../cookies";
 import { getTestInstance } from "../../test-utils/test-instance";
@@ -449,4 +449,29 @@ describe("Custom Session Plugin Tests", async () => {
 			message: string;
 		}>();
 	});
+});
+
+
+it("propagates session storage failures instead of returning an anonymous session", async () => {
+    const decorate = vi.fn();
+    const { auth, signInWithTestUser } = await getTestInstance({ plugins: [customSession(async (data) => { decorate(); return data; })] });
+    const { headers } = await signInWithTestUser();
+    const context = await auth.$context;
+    const find = vi.spyOn(context.internalAdapter, "findSession").mockRejectedValue(new Error("database unavailable"));
+    const response = await auth.handler(new Request(`${context.baseURL}/get-session`, { headers }));
+    expect(response.status).toBe(500);
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(await response.json()).toMatchObject({ code: "FAILED_TO_GET_SESSION" });
+    await expect(auth.api.getSession({ headers })).rejects.toMatchObject({ status: "INTERNAL_SERVER_ERROR" });
+    expect(decorate).not.toHaveBeenCalled();
+    find.mockRestore();
+    const anonymous = await auth.handler(new Request(`${context.baseURL}/get-session`));
+    expect(anonymous.status).toBe(200);
+    expect(await anonymous.json()).toBeNull();
+    const active = await auth.api.getSession({ headers });
+    expect(active).not.toBeNull();
+    await context.internalAdapter.deleteSession(active!.session.token);
+    const revoked = await auth.handler(new Request(`${context.baseURL}/get-session`, { headers }));
+    expect(revoked.status).toBe(200);
+    expect(await revoked.json()).toBeNull();
 });
