@@ -2389,6 +2389,7 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 		withoutSendVerificationEmail?: boolean | undefined;
 	}) {
 		const sendVerificationEmail = vi.fn(async () => {});
+		const onEmailVerificationRequested = vi.fn();
 		const { auth, client, cookieSetter } = await getTestInstance(
 			{
 				socialProviders: {
@@ -2405,6 +2406,7 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 						config.emailPasswordRequireEmailVerification,
 				},
 				emailVerification: {
+					onEmailVerificationRequested,
 					sendOnSignUp: config.sendOnSignUp,
 					sendOnSignIn: config.sendOnSignIn,
 					sendVerificationEmail: config.withoutSendVerificationEmail
@@ -2467,7 +2469,12 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 			return { redirectLocation, setCookie };
 		}
 
-		return { ctx, signInViaCallback, sendVerificationEmail };
+		return {
+			ctx,
+			signInViaCallback,
+			sendVerificationEmail,
+			onEmailVerificationRequested,
+		};
 	}
 
 	function sessionToken(setCookie: string) {
@@ -2478,7 +2485,12 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 	it("blocks the session for a new user whose provider email is unverified", async () => {
 		// No sendOnSignUp: the send is driven by requireEmailVerification (the
 		// credential sign-up rule), so a blocked new user still receives a link.
-		const { ctx, signInViaCallback, sendVerificationEmail } = await setup({
+		const {
+			ctx,
+			signInViaCallback,
+			sendVerificationEmail,
+			onEmailVerificationRequested,
+		} = await setup({
 			requireEmailVerification: true,
 		});
 		const email = "gate-new-unverified@example.com";
@@ -2492,6 +2504,7 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 		expect(redirectLocation).toContain("error=email_not_verified");
 		expect(sessionToken(setCookie)).toBeUndefined();
 		expect(sendVerificationEmail).toHaveBeenCalledTimes(1);
+		expect(onEmailVerificationRequested).toHaveBeenCalledOnce();
 
 		// The user and account are still created; only the session is withheld.
 		const user = await ctx.adapter.findOne<User>({
@@ -2502,7 +2515,11 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 	});
 
 	it("creates a session for a new user whose provider email is verified", async () => {
-		const { signInViaCallback, sendVerificationEmail } = await setup({
+		const {
+			signInViaCallback,
+			sendVerificationEmail,
+			onEmailVerificationRequested,
+		} = await setup({
 			requireEmailVerification: true,
 			sendOnSignUp: true,
 		});
@@ -2517,10 +2534,15 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 		expect(redirectLocation).not.toContain("error");
 		expect(sessionToken(setCookie)).toBeDefined();
 		expect(sendVerificationEmail).not.toHaveBeenCalled();
+		expect(onEmailVerificationRequested).not.toHaveBeenCalled();
 	});
 
 	it("re-sends and blocks a returning unverified user when sendOnSignIn is set", async () => {
-		const { signInViaCallback, sendVerificationEmail } = await setup({
+		const {
+			signInViaCallback,
+			sendVerificationEmail,
+			onEmailVerificationRequested,
+		} = await setup({
 			requireEmailVerification: true,
 			sendOnSignIn: true,
 		});
@@ -2533,6 +2555,7 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 		// The first sign-in creates the user and account, then blocks the session.
 		await signInViaCallback(profile);
 		sendVerificationEmail.mockClear();
+		onEmailVerificationRequested.mockClear();
 
 		// The returning sign-in is blocked again and re-sends the email.
 		const { redirectLocation, setCookie } = await signInViaCallback(profile);
@@ -2540,6 +2563,7 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 		expect(redirectLocation).toContain("error=email_not_verified");
 		expect(sessionToken(setCookie)).toBeUndefined();
 		expect(sendVerificationEmail).toHaveBeenCalledTimes(1);
+		expect(onEmailVerificationRequested).toHaveBeenCalledOnce();
 	});
 
 	it("does not gate social sign-in from emailAndPassword.requireEmailVerification", async () => {
@@ -2560,7 +2584,11 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 	});
 
 	it("lets a returning verified user through the gate without re-sending", async () => {
-		const { signInViaCallback, sendVerificationEmail } = await setup({
+		const {
+			signInViaCallback,
+			sendVerificationEmail,
+			onEmailVerificationRequested,
+		} = await setup({
 			requireEmailVerification: true,
 			sendOnSignIn: true,
 		});
@@ -2580,10 +2608,15 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 		expect(redirectLocation).not.toContain("error");
 		expect(sessionToken(setCookie)).toBeDefined();
 		expect(sendVerificationEmail).not.toHaveBeenCalled();
+		expect(onEmailVerificationRequested).not.toHaveBeenCalled();
 	});
 
 	it("blocks a returning unverified user without re-sending when sendOnSignIn is unset", async () => {
-		const { signInViaCallback, sendVerificationEmail } = await setup({
+		const {
+			signInViaCallback,
+			sendVerificationEmail,
+			onEmailVerificationRequested,
+		} = await setup({
 			requireEmailVerification: true,
 		});
 		const profile = {
@@ -2594,11 +2627,13 @@ describe("oauth2 - per-provider requireEmailVerification gate", async () => {
 
 		await signInViaCallback(profile);
 		sendVerificationEmail.mockClear();
+		onEmailVerificationRequested.mockClear();
 
 		const { redirectLocation, setCookie } = await signInViaCallback(profile);
 		expect(redirectLocation).toContain("error=email_not_verified");
 		expect(sessionToken(setCookie)).toBeUndefined();
 		expect(sendVerificationEmail).not.toHaveBeenCalled();
+		expect(onEmailVerificationRequested).not.toHaveBeenCalled();
 	});
 
 	it("blocks an unverified user even when no sendVerificationEmail is configured", async () => {

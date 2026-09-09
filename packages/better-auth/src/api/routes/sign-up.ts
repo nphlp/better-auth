@@ -12,7 +12,10 @@ import type { AdditionalUserFieldsInput, User } from "../../types";
 import { isAPIError } from "../../utils/is-api-error";
 import { safeCloneRequest } from "../../utils/request";
 import { formCsrfMiddleware } from "../middlewares/origin-check";
-import { createEmailVerificationToken } from "./email-verification";
+import {
+	createEmailVerificationToken,
+	dispatchVerificationEmail,
+} from "./email-verification";
 
 const signUpEmailBodySchema = z
 	.object({
@@ -406,7 +409,8 @@ export const signUpEmail = <O extends BetterAuthOptions>() =>
 
 					if (ctx.context.options.emailVerification?.sendVerificationEmail) {
 						await ctx.context.runInBackgroundOrAwait(
-							ctx.context.options.emailVerification.sendVerificationEmail(
+							dispatchVerificationEmail(
+								ctx,
 								{
 									user: createdUser,
 									url,
@@ -440,10 +444,7 @@ export const signUpEmail = <O extends BetterAuthOptions>() =>
 				}
 				await setSessionCookie(
 					ctx,
-					{
-						session,
-						user: createdUser,
-					},
+					{ isLogin: true, session, user: createdUser },
 					rememberMe === false,
 				);
 				return ctx.json({

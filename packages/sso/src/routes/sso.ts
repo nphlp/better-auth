@@ -1822,10 +1822,7 @@ async function handleOIDCCallback(
 	if ("accountCookie" in linked && linked.accountCookie) {
 		await setAccountCookie(ctx, linked.accountCookie);
 	}
-	await setSessionCookie(ctx, {
-		session,
-		user,
-	});
+	await setSessionCookie(ctx, { isLogin: true, session, user });
 	let toRedirectTo: string;
 	try {
 		const url = linked.isRegister ? newUserURL || callbackURL : callbackURL;

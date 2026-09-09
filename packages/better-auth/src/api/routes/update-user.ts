@@ -1,5 +1,6 @@
 import type { BetterAuthOptions } from "@better-auth/core";
 import { createAuthEndpoint } from "@better-auth/core/api";
+import type { User } from "@better-auth/core/db";
 import { APIError, BASE_ERROR_CODES } from "@better-auth/core/error";
 import { generateId } from "@better-auth/core/utils/id";
 import * as z from "zod";
@@ -9,7 +10,10 @@ import { parseUserInput, parseUserOutput } from "../../db/schema";
 import type { AdditionalUserFieldsInput } from "../../types";
 import { getDate } from "../../utils/date";
 import { originCheck } from "../middlewares";
-import { createEmailVerificationToken } from "./email-verification";
+import {
+	createEmailVerificationToken,
+	dispatchVerificationEmail,
+} from "./email-verification";
 import {
 	getSessionFromCtx,
 	isStateful,
@@ -300,9 +304,12 @@ export const changePassword = createAuthEndpoint(
 		if (!verify) {
 			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.INVALID_PASSWORD);
 		}
-		await ctx.context.internalAdapter.updateAccount(account.id, {
-			password: passwordHash,
-		});
+		const updatedAccount = await ctx.context.internalAdapter.updateAccount(
+			account.id,
+			{
+				password: passwordHash,
+			},
+		);
 		let token = null;
 		if (revokeOtherSessions) {
 			await ctx.context.internalAdapter.deleteUserSessions(session.user.id);
@@ -323,11 +330,15 @@ export const changePassword = createAuthEndpoint(
 			token = newSession.token;
 		}
 
-		if (ctx.context.options.emailAndPassword?.onPasswordChanged) {
+		if (
+			updatedAccount &&
+			ctx.context.options.emailAndPassword?.onPasswordChanged
+		) {
+			const onPasswordChanged =
+				ctx.context.options.emailAndPassword.onPasswordChanged;
 			await ctx.context.runInBackgroundOrAwait(
-				ctx.context.options.emailAndPassword.onPasswordChanged(
-					{ user: session.user },
-					ctx.request,
+				Promise.resolve().then(() =>
+					onPasswordChanged({ user: session.user }, ctx.request),
 				),
 			);
 		}
@@ -777,8 +788,9 @@ export const changeEmail = createAuthEndpoint(
 		 * Verification of the *account* (as opposed to the email change itself) always
 		 * goes through `emailVerification.sendVerificationEmail`, whatever the strategy.
 		 */
-		const sendAccountVerification =
-			ctx.context.options.emailVerification?.sendVerificationEmail;
+		const sendAccountVerification = ctx.context.options.emailVerification?.sendVerificationEmail
+            ? (data: { user: User; url: string; token: string }, request?: Request) => dispatchVerificationEmail(ctx, data, request)
+            : undefined;
 
 		const canUpdateWithoutVerification =
 			ctx.context.session.user.emailVerified !== true &&

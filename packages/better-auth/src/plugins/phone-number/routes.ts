@@ -184,10 +184,7 @@ export const signInPhoneNumber = (opts: RequiredPhoneNumberOptions) =>
 
 			await setSessionCookie(
 				ctx,
-				{
-					session,
-					user: user,
-				},
+				{ isLogin: true, session, user: user },
 				ctx.body.rememberMe === false,
 			);
 			return ctx.json({
@@ -644,10 +641,7 @@ export const verifyPhoneNumber = (opts: RequiredPhoneNumberOptions) =>
 						BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION,
 					);
 				}
-				await setSessionCookie(ctx, {
-					session,
-					user,
-				});
+				await setSessionCookie(ctx, { isLogin: true, session, user });
 				return ctx.json({
 					status: true,
 					token: session.token,

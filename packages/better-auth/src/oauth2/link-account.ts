@@ -9,10 +9,12 @@ import {
 import { isDevelopment } from "@better-auth/core/env";
 import { APIError } from "@better-auth/core/error";
 import { createEmailVerificationToken } from "../api";
+import { dispatchVerificationEmail } from "../api/routes/email-verification";
 import { setAccountCookie } from "../cookies/session-store";
 import { parseAdditionalUserInputFromProviderProfile } from "../db";
 import type { Account, User } from "../types";
 import { isAPIError } from "../utils/is-api-error";
+import { safeCloneRequest } from "../utils/request";
 import { assertValidUserInfo } from "../utils/validate-user-info";
 import { OAUTH_CALLBACK_ERROR_CODES, redirectOnError } from "./errors";
 import { setTokenUtil } from "./utils";
@@ -467,7 +469,7 @@ export async function handleOAuthUserInfo(
 		(c.context.options.emailVerification?.sendOnSignUp ??
 			requireEmailVerification)
 	) {
-		await dispatchVerificationEmail(
+		await scheduleVerificationEmail(
 			c,
 			user,
 			callbackURL,
@@ -477,7 +479,7 @@ export async function handleOAuthUserInfo(
 
 	if (requireEmailVerification && !user.emailVerified) {
 		if (!isRegister && c.context.options.emailVerification?.sendOnSignIn) {
-			await dispatchVerificationEmail(
+			await scheduleVerificationEmail(
 				c,
 				user,
 				callbackURL,
@@ -526,7 +528,7 @@ export async function handleOAuthUserInfo(
 	};
 }
 
-async function dispatchVerificationEmail(
+async function scheduleVerificationEmail(
 	c: GenericEndpointContext,
 	user: User,
 	callbackURL: string | undefined,
@@ -537,6 +539,7 @@ async function dispatchVerificationEmail(
 	if (!sendVerificationEmail) {
 		return;
 	}
+	const verificationRequest = safeCloneRequest(c.request);
 	const send = async () => {
 		try {
 			const token = await createEmailVerificationToken(
@@ -549,13 +552,14 @@ async function dispatchVerificationEmail(
 				callbackURL || "/",
 			)}`;
 			await c.context.runInBackgroundOrAwait(
-				sendVerificationEmail(
+				dispatchVerificationEmail(
+					c,
 					{
 						user,
 						url,
 						token,
 					},
-					c.request,
+					verificationRequest,
 				),
 			);
 		} catch (e) {
