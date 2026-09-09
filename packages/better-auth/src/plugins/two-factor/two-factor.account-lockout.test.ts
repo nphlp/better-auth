@@ -7,12 +7,13 @@ import { createAdapterFactory } from "@better-auth/core/db/adapter";
 import { createOTP } from "@better-auth/utils/otp";
 import { describe, expect, it } from "vitest";
 import { memoryAdapter } from "../../adapters/memory-adapter";
-import { symmetricDecrypt } from "../../crypto";
+import { symmetricDecrypt, symmetricEncrypt } from "../../crypto";
 import { convertSetCookieToCookie } from "../../test-utils/headers";
 import { getTestInstance } from "../../test-utils/test-instance";
 import type { User } from "../../types";
 import { DEFAULT_SECRET } from "../../utils/constants";
 import { TWO_FACTOR_ERROR_CODES, twoFactor } from ".";
+import { generateBackupCodes } from "./backup-codes";
 import type { TwoFactorOptions, TwoFactorTable } from "./types";
 import { recordTwoFactorFailure } from "./verify-two-factor";
 
@@ -96,13 +97,38 @@ async function setup(
 		where: [{ field: "email", value: testUser.email }],
 	});
 	const userId = dbUser?.id as string;
-	const enrollment = await auth.api.enableTwoFactor({
-		body: { password: testUser.password },
-		headers,
-	});
-	if (enrollment.method !== "totp") {
-		throw new Error("expected totp enrollment");
-	}
+	const enrollment = database
+		? await (async () => {
+				const backupCodes = await generateBackupCodes(DEFAULT_SECRET, {
+					storeBackupCodes: "encrypted",
+				});
+				await db.update({
+					model: "user",
+					where: [{ field: "id", value: userId }],
+					update: { twoFactorEnabled: true },
+				});
+				await db.create({
+					model: "twoFactor",
+					data: {
+						userId,
+						verified: true,
+						secret: await symmetricEncrypt({
+							key: DEFAULT_SECRET,
+							data: "legacy-enrolled-factor-secret",
+						}),
+						backupCodes: backupCodes.encryptedBackupCodes,
+					},
+				});
+				return {
+					method: "totp" as const,
+					backupCodes: backupCodes.backupCodes,
+				};
+			})()
+		: await auth.api.enableTwoFactor({
+				body: { password: testUser.password },
+				headers,
+			});
+	if (enrollment.method !== "totp") throw new Error("expected totp enrollment");
 	const row = await db.findOne<TwoFactorTable>({
 		model: "twoFactor",
 		where: [{ field: "userId", value: userId }],
@@ -111,10 +137,11 @@ async function setup(
 		key: DEFAULT_SECRET,
 		data: row!.secret,
 	});
-	await auth.api.verifyTOTP({
-		body: { code: await createOTP(secret).totp() },
-		headers,
-	});
+	if (!database)
+		await auth.api.verifyTOTP({
+			body: { code: await createOTP(secret).totp() },
+			headers,
+		});
 
 	async function startChallenge(): Promise<Headers> {
 		const signIn = await auth.api.signInEmail({

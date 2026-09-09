@@ -253,6 +253,12 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 								model: opts.twoFactorTable,
 								where: [{ field: "userId", value: user.id }],
 							});
+							if (existingTwoFactor && existingTwoFactor.verified !== false) {
+								throw APIError.from(
+									"BAD_REQUEST",
+									TWO_FACTOR_ERROR_CODES.TOTP_ALREADY_ENABLED,
+								);
+							}
 							const secret = generateRandomString(32);
 							const encryptedSecret = await symmetricEncrypt({
 								key: ctx.context.secretConfig,

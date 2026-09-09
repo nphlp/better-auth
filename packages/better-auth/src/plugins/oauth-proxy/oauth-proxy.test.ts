@@ -1123,6 +1123,7 @@ describe("oauth-proxy", async () => {
 				},
 				{
 					testWith: "postgres",
+					postgresURL: process.env.BETTER_AUTH_TEST_POSTGRES_URL,
 				},
 			);
 
