@@ -855,7 +855,7 @@ export type BetterAuthOptions = {
 					 * @param email the email address that was submitted
 					 * but has no associated account
 					 */
-					data: { email: string },
+					data: { email: string; redirectTo?: string },
 					/**
 					 * The request object
 					 */

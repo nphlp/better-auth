@@ -115,7 +115,7 @@ export const requestPasswordReset = createAuthEndpoint(
 				await ctx.context.runInBackgroundOrAwait(
 					Promise.resolve().then(() =>
 						ctx.context.options.emailAndPassword?.sendResetPasswordNoAccount?.(
-							{ email },
+							{ email, redirectTo },
 							ctx.request,
 						),
 					),

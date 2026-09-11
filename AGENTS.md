@@ -92,3 +92,10 @@ When a flow must synthesize an email, use `createPlaceholderEmail` with a stable
 - DO NOT COMMIT unless the user explicitly asks
 - Conventional Commits: `feat(scope):`, `fix(scope):`, `docs:`, `chore:`. Use `!` for breaking changes (e.g. `feat(auth)!:`)
 - PRs target `main`
+
+## No-account password reset invitations
+
+`sendResetPasswordNoAccount` receives the submitted email and optional `redirectTo`, after origin
+validation. Consumers can retain their registration return target without re-reading a consumed
+request body. Keep the HTTP response identical for existing and unknown accounts, including when
+notification delivery fails.

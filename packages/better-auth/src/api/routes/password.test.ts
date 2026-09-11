@@ -438,6 +438,41 @@ describe("forgot password", async () => {
 		);
 	});
 
+	it("passes the validated redirect to the no-account callback through HTTP", async () => {
+		const sendResetPasswordNoAccount = vi.fn();
+		const { auth } = await getTestInstance({
+			advanced: { disableOriginCheck: false },
+			emailAndPassword: {
+				enabled: true,
+				async sendResetPassword() {},
+				sendResetPasswordNoAccount,
+			},
+		});
+		const redirectTo =
+			"http://localhost:3000/reset-password?redirect=%2Faccount%3Flabel%3Da%2526b";
+		const request = (target: string) =>
+			new Request("http://localhost:3000/api/auth/request-password-reset", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					email: "unknown@example.com",
+					redirectTo: target,
+				}),
+			});
+		const response = await auth.handler(request(redirectTo));
+		expect(response.status).toBe(200);
+		expect(sendResetPasswordNoAccount).toHaveBeenCalledWith(
+			{ email: "unknown@example.com", redirectTo },
+			expect.any(Request),
+		);
+		sendResetPasswordNoAccount.mockClear();
+		const refused = await auth.handler(
+			request("https://untrusted.example/reset-password"),
+		);
+		expect(refused.status).toBe(403);
+		expect(sendResetPasswordNoAccount).not.toHaveBeenCalled();
+	});
+
 	it("should not call sendResetPasswordNoAccount when email has an account", async () => {
 		const mockSendNoAccount = vi.fn();
 		const mockSendReset = vi.fn();
