@@ -37,6 +37,9 @@ This is the Better Auth repository - a comprehensive authentication framework fo
 ### URL Composition
 
 - When appending query parameters to callback or redirect URLs, use `appendQueryParams` from `@better-auth/core/utils/url`. Keep origin and trust validation separate.
+- Magic-link callback query values are already decoded by the HTTP query parser. Validate and
+  redirect using that same value without another `decodeURIComponent`, preserving encoded query
+  delimiters and fragments. Cover ordinary, new-user and error redirects through `auth.handler`.
 
 ```ts
 const params = new URLSearchParams({ error });
