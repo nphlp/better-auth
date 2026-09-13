@@ -403,30 +403,13 @@ export const setPassword = createAuthEndpoint.serverOnly(
 			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.PASSWORD_TOO_LONG);
 		}
 
-		const account = await ctx.context.internalAdapter.findCredentialAccount(
-			session.user.id,
-		);
 		const passwordHash = await ctx.context.password.hash(newPassword);
-		if (!account) {
-			await ctx.context.internalAdapter.linkAccount({
-				userId: session.user.id,
-				providerId: "credential",
-				accountId: session.user.id,
-				password: passwordHash,
-			});
-			return ctx.json({
-				status: true,
-			});
-		}
-		if (!account.password) {
-			await ctx.context.internalAdapter.updateAccount(account.id, {
-				password: passwordHash,
-			});
-			return ctx.json({
-				status: true,
-			});
-		}
-		throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.PASSWORD_ALREADY_SET);
+		await ctx.context.internalAdapter.setCredentialPassword(
+			session.user.id,
+			passwordHash,
+			{ overwrite: false },
+		);
+		return ctx.json({ status: true });
 	},
 );
 

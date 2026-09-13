@@ -6,6 +6,8 @@ import type { schema } from "./schema";
 import type { TOTPOptions } from "./totp";
 
 export interface TwoFactorOptions {
+	/** Enable the second-factor gate for magic links and resolve its browser destination. */
+	magicLinkTwoFactorRedirect?: (callbackURL: string) => string;
 	/**
 	 * Application Name
 	 */

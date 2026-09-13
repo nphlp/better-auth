@@ -137,6 +137,26 @@ When `method` is `"otp"`:
 * Requires `otpOptions.sendOTP` to be configured on the server.
 * OTP codes are sent via the configured `sendOTP` function at sign-in time. Setting `twoFactorEnabled` directly via a database hook achieves the same result.
 
+### Requiring 2FA after a magic link
+
+The `magicLinkTwoFactorRedirect` option opts email-link authentication into the native two-factor
+challenge. The callback receives the already-parsed primary callback URL and returns the second-factor
+page URL. Better Auth validates that destination against its trusted origins. Preserve an allowlisted
+return target in your application and navigate there after successful factor verification.
+
+```ts
+twoFactor({
+    allowPasswordless: true,
+    magicLinkTwoFactorRedirect: () => "/verify-2fa",
+})
+```
+
+The existing challenge expiration, signed cookies, attempt budgets and trusted-device rules apply.
+The pending primary session is discarded before the response. No usable new session is returned
+until a factor succeeds. Without a browser callback URL, the response is `twoFactorRedirect` JSON.
+The option is disabled by default; `allowPasswordless` alone still only permits factor enrollment.
+It does not enable a challenge for magic links or other non-credential methods.
+
 ### Sign In with 2FA
 
 When a user with 2FA enabled tries to sign in via email, username, or phone number, the response object will contain `twoFactorRedirect` set to `true` and `twoFactorMethods` — an array of the 2FA methods available for the user (e.g. `["totp"]`, `["totp", "otp"]`). Use `twoFactorMethods` to decide which verification UI to show.

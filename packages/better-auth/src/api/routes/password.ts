@@ -323,18 +323,11 @@ export const resetPassword = createAuthEndpoint(
 			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.USER_NOT_FOUND);
 		}
 		const hashedPassword = await ctx.context.password.hash(newPassword);
-		const account =
-			await ctx.context.internalAdapter.findCredentialAccount(userId);
-		if (!account) {
-			await ctx.context.internalAdapter.createAccount({
-				userId,
-				providerId: "credential",
-				accountId: user.id,
-				password: hashedPassword,
-			});
-		} else {
-			await ctx.context.internalAdapter.updatePassword(userId, hashedPassword);
-		}
+		await ctx.context.internalAdapter.setCredentialPassword(
+			userId,
+			hashedPassword,
+			{ overwrite: true },
+		);
 
 		if (ctx.context.options.emailAndPassword?.onPasswordReset) {
 			await ctx.context.options.emailAndPassword.onPasswordReset(

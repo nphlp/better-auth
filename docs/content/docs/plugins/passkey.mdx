@@ -105,6 +105,18 @@ export const auth = betterAuth({
 })
 ```
 
+### Requiring local user verification
+
+Set `requireUserVerification: true` to request `userVerification: "required"` for registration and
+authentication and enforce it during both server verifications. This overrides a weaker registration
+`authenticatorSelection.userVerification`. A client changing the generated options cannot disable
+the server check. Missing user verification rejects the ceremony without creating a passkey or session.
+The default is `false`, preserving the existing preferred/optional behavior.
+
+```ts
+passkey({ requireUserVerification: true })
+```
+
 ### Passkey-first registration (pre-auth)
 
 When `registration.requireSession` is `false`, passkey registration can be initiated without a session. You can pass an opaque `context` to the registration options endpoint; it will be forwarded to `resolveUser`.

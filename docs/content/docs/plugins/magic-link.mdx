@@ -127,6 +127,30 @@ If you want to handle the verification manually, (e.g, if you send the user a di
   ```
 </APIMethod>
 
+### Explicit passwordless registration
+
+Set `requireExplicitSignUp: true` to allow new accounts only when the request includes a signup
+profile. Existing accounts can still sign in without a profile. `disableSignUp: true` continues
+to refuse every new account, including explicit requests. Both options default to `false`.
+
+```ts
+await authClient.signIn.magicLink({
+    email: "member@example.com",
+    signUp: {
+        name: "Ada",
+        additionalFields: { lastname: "Lovelace" },
+    },
+    callbackURL: "/",
+});
+```
+
+`additionalFields` uses the declared user-field validators and input permissions. Undeclared and
+protected fields cannot override identity or verification state. The validated profile is stored
+with the expiring, single-use link. The account is created and its email verified only when the
+link is consumed; no password credential is created. A signup request never overwrites an existing
+user's profile. The delivery callback receives `isSignUp` to distinguish the requested flow; it is
+not proof that the recipient is a new user.
+
 ## Configuration Options
 
 **sendMagicLink**: The `sendMagicLink` function is called when a user requests a magic link. It takes an object with the following properties:

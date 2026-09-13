@@ -3,6 +3,7 @@ import type {
 	GenericEndpointContext,
 } from "@better-auth/core";
 import { createAuthMiddleware } from "@better-auth/core/api";
+import { BetterAuthError } from "@better-auth/core/error";
 import { PACKAGE_VERSION } from "../../version";
 
 declare module "@better-auth/core" {
@@ -77,6 +78,13 @@ export const lastLoginMethod = <O extends LastLoginMethodOptions>(
 		if (!path) {
 			return null;
 		}
+		if (
+			path.startsWith("/two-factor/") &&
+			"completedTwoFactorMethod" in ctx.context &&
+			typeof ctx.context.completedTwoFactorMethod === "string"
+		) {
+			return ctx.context.completedTwoFactorMethod;
+		}
 
 		// Check for OAuth callbacks (/callback/:id)
 		if (path.startsWith("/callback/")) {
@@ -113,6 +121,18 @@ export const lastLoginMethod = <O extends LastLoginMethodOptions>(
 		id: "last-login-method",
 		version: PACKAGE_VERSION,
 		init(ctx) {
+			const plugins = ctx.options.plugins ?? [];
+			const factorIndex = plugins.findIndex(
+				(plugin) => plugin.id === "two-factor",
+			);
+			const methodIndex = plugins.findIndex(
+				(plugin) => plugin.id === "last-login-method",
+			);
+			if (factorIndex > methodIndex && methodIndex !== -1) {
+				throw new BetterAuthError(
+					"Place lastLoginMethod after twoFactor in the plugins array so pending logins cannot update the remembered method",
+				);
+			}
 			return {
 				options: {
 					databaseHooks: {
@@ -166,7 +186,7 @@ export const lastLoginMethod = <O extends LastLoginMethodOptions>(
 					},
 					handler: createAuthMiddleware(async (ctx) => {
 						const lastUsedLoginMethod = resolveMethod(ctx);
-						if (lastUsedLoginMethod) {
+						if (lastUsedLoginMethod && ctx.context.newSession) {
 							const setCookieHeaders =
 								ctx.context.responseHeaders?.getSetCookie?.() || [];
 							const sessionTokenName =

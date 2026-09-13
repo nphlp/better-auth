@@ -248,6 +248,13 @@ export interface InternalAdapter<
 
 	updatePassword(userId: string, password: string): Promise<void>;
 
+	/** Sets a credential hash, serializing creation and reset on transactional adapters. */
+	setCredentialPassword(
+		userId: string,
+		password: string,
+		options: { overwrite: boolean; requireTransaction?: boolean },
+	): Promise<void>;
+
 	findAccounts(userId: string): Promise<Account[]>;
 
 	/** Find the credential account whose stable local subject is the user ID. */

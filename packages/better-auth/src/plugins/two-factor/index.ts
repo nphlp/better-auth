@@ -514,7 +514,9 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 						return (
 							context.path === "/sign-in/email" ||
 							context.path === "/sign-in/username" ||
-							context.path === "/sign-in/phone-number"
+							context.path === "/sign-in/phone-number" ||
+							(!!options?.magicLinkTwoFactorRedirect &&
+								context.path === "/magic-link/verify")
 						);
 					},
 					handler: createAuthMiddleware(async (ctx) => {
@@ -619,7 +621,11 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 								maxAge,
 							},
 						);
-						const identifier = `2fa-${generateRandomString(20)}`;
+						const method =
+							ctx.path === "/magic-link/verify"
+								? "magic-link"
+								: ctx.path.slice("/sign-in/".length);
+						const identifier = `2fa:${method}:${generateRandomString(20)}`;
 						const expiresAt = new Date(Date.now() + maxAge * 1000);
 						await ctx.context.internalAdapter.createVerificationValue({
 							value: data.user.id,
@@ -670,6 +676,25 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 							twoFactorMethods.push("otp");
 						}
 
+						if (
+							ctx.path === "/magic-link/verify" &&
+							ctx.query?.callbackURL &&
+							options?.magicLinkTwoFactorRedirect
+						) {
+							const destination = options.magicLinkTwoFactorRedirect(
+								ctx.query.callbackURL,
+							);
+							if (
+								!ctx.context.isTrustedOrigin(destination, {
+									allowRelativePaths: true,
+								})
+							) {
+								throw ctx.error("BAD_REQUEST", {
+									message: "Untrusted second-factor destination",
+								});
+							}
+							throw ctx.redirect(destination);
+						}
 						return ctx.json({
 							twoFactorRedirect: true,
 							twoFactorMethods,

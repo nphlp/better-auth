@@ -99,3 +99,33 @@ When a flow must synthesize an email, use `createPlaceholderEmail` with a stable
 validation. Consumers can retain their registration return target without re-reading a consumed
 request body. Keep the HTTP response identical for existing and unknown accounts, including when
 notification delivery fails.
+
+## Opt-in passwordless extensions
+
+Magic-link signup profiles are validated before token storage using declared user field permissions.
+Only token consumption creates the verified account. Defaults retain automatic signup compatibility,
+while `disableSignUp` always wins and `requireExplicitSignUp` requires a profile for unknown users.
+
+The two-factor plugin optionally handles magic-link verification using its existing pending-session,
+signed-cookie, expiration and attempt-budget machinery. The application supplies a trusted UI
+redirect, not an authenticated session. The signed challenge identifier retains the primary method;
+old `2fa-` identifiers stay consumable. Successful verification exposes transient request metadata
+for the last-login-method cookie resolver. No schema field or client-provided identity is added.
+
+Passkey `requireUserVerification` applies to option generation and cryptographic verification in both
+ceremonies. Test the verifier boundary and actual browser assertions; requesting UV in browser
+options alone does not enforce the server policy. Keep every new option disabled by default.
+
+`lastLoginMethod` must follow `twoFactor` in the plugin array. Initialization rejects reversed
+ordering because its cookie hook must see the completed two-factor decision. This completion
+guarantee applies to the cookie; the optional database field retains its existing provisioning
+and session-creation hook semantics.
+
+`internalAdapter.setCredentialPassword` is shared by initial password creation and native reset.
+With a transactional adapter it first updates the user's `updatedAt` to obtain the database write
+lock, then reads and mutates the credential through the native account hooks. This metadata write
+is internal synchronization, not a user-profile edit, so it bypasses user edit hooks. Credential
+hook vetoes fail the operation and roll back. A missing user fails closed. The application may
+require transaction support; legacy nontransactional consumers retain their previous behavior
+without a cross-process concurrency guarantee. Test the actual PostgreSQL race at the consumer
+boundary in addition to SQLite hook/rollback tests. No schema column is added.

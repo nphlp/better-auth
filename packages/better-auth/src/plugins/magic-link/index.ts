@@ -10,6 +10,7 @@ import { setSessionCookie } from "../../cookies";
 import { generateRandomString } from "../../crypto";
 import {
 	parseSessionOutput,
+	parseUserInput,
 	parseUserOutput,
 	revokeUnprovenAccountAccess,
 } from "../../db";
@@ -26,6 +27,8 @@ declare module "@better-auth/core" {
 }
 
 export interface MagicLinkOptions {
+	/** Require an explicit signup profile before creating a user. */
+	requireExplicitSignUp?: boolean;
 	/**
 	 * Time in seconds until the magic link expires.
 	 * @default (60 * 5) // 5 minutes
@@ -52,6 +55,7 @@ export interface MagicLinkOptions {
 			email: string;
 			url: string;
 			token: string;
+			isSignUp?: boolean;
 			metadata?: Record<string, any>;
 		},
 		ctx?: GenericEndpointContext | undefined,
@@ -106,6 +110,12 @@ export interface MagicLinkOptions {
 }
 
 const signInMagicLinkBodySchema = z.object({
+	signUp: z
+		.object({
+			name: z.string().trim().min(1),
+			additionalFields: z.record(z.string(), z.unknown()).optional(),
+		})
+		.optional(),
 	email: z.email().meta({
 		description: "Email address to send the magic link",
 	}),
@@ -246,6 +256,16 @@ export const magicLink = (options: MagicLinkOptions) => {
 				},
 				async (ctx) => {
 					const { email, metadata } = ctx.body;
+					const signUp = ctx.body.signUp
+						? {
+								name: ctx.body.signUp.name,
+								additionalFields: parseUserInput(
+									ctx.context.options,
+									ctx.body.signUp.additionalFields ?? {},
+									"create",
+								),
+							}
+						: undefined;
 
 					const verificationToken = opts?.generateToken
 						? await opts.generateToken(email)
@@ -253,7 +273,7 @@ export const magicLink = (options: MagicLinkOptions) => {
 					const storedToken = await storeToken(ctx, verificationToken);
 					await ctx.context.internalAdapter.createVerificationValue({
 						identifier: storedToken,
-						value: JSON.stringify({ email, name: ctx.body.name }),
+						value: JSON.stringify({ email, name: ctx.body.name, signUp }),
 						expiresAt: new Date(Date.now() + (opts.expiresIn || 60 * 5) * 1000),
 					});
 					const realBaseURL = new URL(ctx.context.baseURL);
@@ -280,6 +300,7 @@ export const magicLink = (options: MagicLinkOptions) => {
 							email,
 							url: url.toString(),
 							token: verificationToken,
+							isSignUp: !!signUp,
 							metadata,
 						},
 						ctx,
@@ -393,9 +414,13 @@ export const magicLink = (options: MagicLinkOptions) => {
 					if (!tokenValue) {
 						redirectWithError("INVALID_TOKEN");
 					}
-					const { email, name } = JSON.parse(tokenValue.value) as {
+					const { email, name, signUp } = JSON.parse(tokenValue.value) as {
 						email: string;
 						name?: string | undefined;
+						signUp?: {
+							name: string;
+							additionalFields: Record<string, unknown>;
+						};
 					};
 
 					let isNewUser = false;
@@ -404,16 +429,20 @@ export const magicLink = (options: MagicLinkOptions) => {
 						.then((res) => res?.user);
 
 					if (!user) {
-						if (!opts.disableSignUp) {
+						if (
+							!opts.disableSignUp &&
+							(!opts.requireExplicitSignUp || signUp)
+						) {
 							let newUser: Awaited<
 								ReturnType<typeof ctx.context.internalAdapter.createUser>
 							> | null;
 							try {
 								newUser = await ctx.context.internalAdapter.createUser(
 									{
+										...signUp?.additionalFields,
 										email: email,
 										emailVerified: true,
-										name: name || "",
+										name: signUp?.name || name || "",
 									},
 									{ method: "magic-link" },
 								);

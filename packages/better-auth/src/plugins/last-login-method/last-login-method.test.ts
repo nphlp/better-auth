@@ -413,6 +413,7 @@ describe("lastLoginMethod", async () => {
 		const updateUser = vi.fn();
 		const plugin = lastLoginMethod({ storeInDatabase: true });
 		const initResult = await plugin.init?.({
+			options: {},
 			internalAdapter: {
 				updateUser,
 			},
@@ -460,6 +461,7 @@ describe("lastLoginMethod", async () => {
 			customResolveMethod,
 		});
 		const initResult = await plugin.init?.({
+			options: {},
 			internalAdapter: {
 				updateUser,
 			},

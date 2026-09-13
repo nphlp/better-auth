@@ -90,6 +90,10 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 						code: "FAILED_TO_CREATE_SESSION",
 					});
 				}
+				const method = consumed.identifier.startsWith("2fa:")
+					? consumed.identifier.split(":")[1]
+					: undefined;
+				Object.assign(ctx.context, { completedTwoFactorMethod: method });
 				await setSessionCookie(ctx, { isLogin: true, session, user });
 				// Always clear the two factor cookie after successful verification
 				expireCookie(ctx, twoFactorCookie);

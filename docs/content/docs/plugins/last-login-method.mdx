@@ -509,3 +509,16 @@ export const authClient = createAuthClient({
 <Callout type="info">
   In Expo only apps, where browser support isn’t needed, you can omit the server plugin and rely solely on the client plugin.
 </Callout>
+
+## Completing a two-factor login
+
+Place `lastLoginMethod()` after `twoFactor()` in the `plugins` array. Initialization rejects the
+reverse order because the cookie hook must run after the two-factor decision. The completion
+guarantee below concerns the cookie. `storeInDatabase` retains its separate provisioning and
+session-creation hooks and should not be used as an audit of completed authentication.
+
+Cookie storage requires a completed session. A pending, rejected or cancelled two-factor login does
+not replace the browser's previous successful method. After a successful native factor challenge,
+the resolver uses the retained primary method (for example `email` or `magic-link`), including when
+verification completes in a different request. Previously issued challenges without method metadata
+remain valid but cannot supply that missing preference. This preference grants no authentication.

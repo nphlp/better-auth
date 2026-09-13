@@ -97,6 +97,8 @@ export interface PasskeyAuthenticationOptions {
 }
 
 export interface PasskeyOptions {
+	/** Require verified local user verification for registration and authentication. */
+	requireUserVerification?: boolean;
 	/**
 	 * A unique identifier for your website. 'localhost' is okay for
 	 * local dev

@@ -1636,3 +1636,84 @@ describe("passkey expirationTime per-request", () => {
 		expect(expiresAt).toBeGreaterThan(currentTime);
 	});
 });
+
+describe("required user verification", () => {
+	afterEach(() => {
+		serverMocks.verifyRegistrationResponse.mockReset();
+		serverMocks.verifyAuthenticationResponse.mockReset();
+	});
+
+	it.each([
+		true,
+		false,
+	] as const)("requests and verifies local user verification when required=%s", async (required) => {
+		const { auth, client, signInWithTestUser, cookieSetter } =
+			await getTestInstance({
+				plugins: [passkey({ requireUserVerification: required })],
+			});
+		const { headers } = await signInWithTestUser();
+		headers.set("origin", "http://localhost:3000");
+		const registration = await client.$fetch(
+			"/passkey/generate-register-options",
+			{
+				method: "GET",
+				headers,
+				onResponse: cookieSetter(headers),
+			},
+		);
+		expect(registration.error).toBeNull();
+		expect(registration.data).toMatchObject({
+			authenticatorSelection: {
+				userVerification: required ? "required" : "preferred",
+			},
+		});
+		serverMocks.verifyRegistrationResponse.mockResolvedValue(
+			mockRegistrationVerification,
+		);
+		await auth.api.verifyPasskeyRegistration({
+			headers,
+			body: { response: mockRegistrationResponse },
+		});
+		expect(serverMocks.verifyRegistrationResponse).toHaveBeenCalledWith(
+			expect.objectContaining({ requireUserVerification: required }),
+		);
+		const anonymousHeaders = new Headers({ origin: "http://localhost:3000" });
+		const authentication = await client.$fetch(
+			"/passkey/generate-authenticate-options",
+			{
+				method: "GET",
+				headers: anonymousHeaders,
+				onResponse: cookieSetter(anonymousHeaders),
+			},
+		);
+		expect(authentication.error).toBeNull();
+		expect(authentication.data).toMatchObject({
+			userVerification: required ? "required" : "preferred",
+		});
+		serverMocks.verifyAuthenticationResponse.mockRejectedValue(
+			new Error("User verification is missing"),
+		);
+		await expect(
+			auth.api.verifyPasskeyAuthentication({
+				headers: anonymousHeaders,
+				body: {
+					response: {
+						id: "credential-id",
+						rawId: "credential-id",
+						type: "public-key",
+						response: {
+							clientDataJSON: "",
+							authenticatorData: "",
+							signature: "",
+						},
+						clientExtensionResults: {},
+					},
+				},
+			}),
+		).rejects.toMatchObject({ status: "BAD_REQUEST" });
+		expect(serverMocks.verifyAuthenticationResponse).toHaveBeenCalledWith(
+			expect.objectContaining({ requireUserVerification: required }),
+		);
+		expect(await auth.api.getSession({ headers: anonymousHeaders })).toBeNull();
+	});
+});

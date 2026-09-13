@@ -15,7 +15,11 @@ import {
 } from "@better-auth/core/context";
 import type { DBAdapter, Where } from "@better-auth/core/db/adapter";
 import type { InternalLogger } from "@better-auth/core/env";
-import { APIError, BetterAuthError } from "@better-auth/core/error";
+import {
+	APIError,
+	BASE_ERROR_CODES,
+	BetterAuthError,
+} from "@better-auth/core/error";
 import { generateId } from "@better-auth/core/utils/id";
 import { getIP } from "@better-auth/core/utils/ip";
 import { safeJSONParse } from "@better-auth/core/utils/json";
@@ -1183,6 +1187,59 @@ export const createInternalAdapter = (
 				},
 			});
 			return user;
+		},
+		async setCredentialPassword(userId, password, config) {
+			const transactional =
+				!!adapter.options?.adapterConfig.transaction && adapter.id !== "memory";
+			if (config.requireTransaction && !transactional) {
+				throw new APIError("BAD_REQUEST", {
+					code: "PASSWORD_REQUIRES_TRANSACTION",
+					message:
+						"Password creation requires a transactional database adapter",
+				});
+			}
+			const write = async () => {
+				if (transactional) {
+					const tx = await getCurrentAdapter(adapter);
+					const user = await tx.update<User>({
+						model: "user",
+						where: [{ field: "id", value: userId }],
+						update: { updatedAt: new Date() },
+					});
+					if (!user)
+						throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.USER_NOT_FOUND);
+				}
+				const account = await this.findCredentialAccount(userId);
+				if (account?.password && !config.overwrite) {
+					throw APIError.from(
+						"BAD_REQUEST",
+						BASE_ERROR_CODES.PASSWORD_ALREADY_SET,
+					);
+				}
+				if (account) {
+					await this.updatePassword(userId, password);
+				} else {
+					await this.createAccount({
+						userId,
+						accountId: userId,
+						providerId: "credential",
+						password,
+					});
+				}
+				if ((await this.findCredentialAccount(userId))?.password !== password) {
+					throw new BetterAuthError(
+						"The credential password mutation was not persisted",
+					);
+				}
+			};
+			if (transactional) {
+				await runWithTransaction(adapter, write, {
+					onAfterCommitHookError: (error) =>
+						logger.error("Password post-commit hook failed", error),
+				});
+			} else {
+				await write();
+			}
 		},
 		updatePassword: async (userId: string, password: string) => {
 			await updateManyWithHooks(
