@@ -1,5 +1,17 @@
 # @better-auth/drizzle-adapter
 
+## 1.7.5
+
+### Patch Changes
+
+- [#11263](https://github.com/better-auth/better-auth/pull/11263) [`e18bc83`](https://github.com/better-auth/better-auth/commit/e18bc83172dca1804f0c5c3eff41d65e2849c557) Thanks [@bytaesu](https://github.com/bytaesu)! - Defer Drizzle relation metadata access until a relational query runs, preserving lazy database initialization during application builds.
+
+## 1.7.4
+
+### Patch Changes
+
+- [#11213](https://github.com/better-auth/better-auth/pull/11213) [`b905bfe`](https://github.com/better-auth/better-auth/commit/b905bfe3d97de3c88fc31f7f2820531702df583e) Thanks [@bytaesu](https://github.com/bytaesu)! - Run schema validation for the Drizzle Relations v2 adapter, including configurations that provide only relations, so schema mismatches are reported during initialization.
+
 ## 1.7.3
 
 ### Patch Changes

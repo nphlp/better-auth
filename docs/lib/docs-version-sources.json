@@ -1,0 +1,12 @@
+{
+  "latest": {
+    "contentDirectory": "docs",
+    "editBranch": "main",
+    "commitSha": null
+  },
+  "1.6": {
+    "contentDirectory": "_generated/docs/v1-6",
+    "editBranch": "v1.6.x",
+    "commitSha": "c768d7362548c21aac60c0111d50f99ec2892847"
+  }
+}

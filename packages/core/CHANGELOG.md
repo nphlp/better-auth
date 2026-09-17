@@ -1,5 +1,21 @@
 # @better-auth/core
 
+## 1.7.5
+
+### Patch Changes
+
+- [#11203](https://github.com/better-auth/better-auth/pull/11203) [`cb627eb`](https://github.com/better-auth/better-auth/commit/cb627ebeb174d9a35ccc79018110bbc7a50a6fb8) Thanks [@dshukertjr](https://github.com/dshukertjr)! - Add a `database.schemaName` option for direct PostgreSQL connections. When set, the adapter and the CLI qualify every statement with that schema, so `auth generate` writes a schema-qualified migration that creates the schema before its tables instead of relying on the connection's `search_path`.
+
+- [#11290](https://github.com/better-auth/better-auth/pull/11290) [`dae97ed`](https://github.com/better-auth/better-auth/commit/dae97ed932a084a11faa96a2e1abf052fc85d2ea) Thanks [@bytaesu](https://github.com/bytaesu)! - Restore database option type inference for projects that do not use Cloudflare Workers.
+
+## 1.7.4
+
+### Patch Changes
+
+- [#11210](https://github.com/better-auth/better-auth/pull/11210) [`3ff842a`](https://github.com/better-auth/better-auth/commit/3ff842ab7fdf60746b5d7bd8c27becd2d0a79c2e) Thanks [@bytaesu](https://github.com/bytaesu)! - Prevent bundlers such as Metro from failing when the optional OpenTelemetry API is not installed.
+
+- [#11224](https://github.com/better-auth/better-auth/pull/11224) [`c1756a2`](https://github.com/better-auth/better-auth/commit/c1756a22745d4580425559b8800acc6e9a70e30f) Thanks [@bytaesu](https://github.com/bytaesu)! - Add `experimental.instrumentation.enabled` to disable Better Auth OpenTelemetry span creation per auth instance. Instrumentation remains enabled by default and independent of usage reporting.
+
 ## 1.7.3
 
 ### Patch Changes
