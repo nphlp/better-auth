@@ -19,6 +19,10 @@ import { parseUserInput, parseUserOutput } from "../../db/schema";
 import type { AdditionalUserFieldsInput } from "../../types";
 import { getDate } from "../../utils/date";
 import { safeCloneRequest } from "../../utils/request";
+import {
+	assertPasswordNotTooLong,
+	assertPasswordNotTooShort,
+} from "../../utils/password";
 import { originCheck } from "../middlewares";
 import {
 	createEmailVerificationToken,
@@ -298,18 +302,9 @@ export const changePassword = createAuthEndpoint(
 	async (ctx) => {
 		const { newPassword, currentPassword, revokeOtherSessions } = ctx.body;
 		const session = ctx.context.session;
-		const minPasswordLength = ctx.context.password.config.minPasswordLength;
-		if (newPassword.length < minPasswordLength) {
-			ctx.context.logger.warn("Password is too short");
-			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.PASSWORD_TOO_SHORT);
-		}
-
-		const maxPasswordLength = ctx.context.password.config.maxPasswordLength;
-
-		if (newPassword.length > maxPasswordLength) {
-			ctx.context.logger.warn("Password is too long");
-			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.PASSWORD_TOO_LONG);
-		}
+		assertPasswordNotTooShort(ctx, newPassword);
+		assertPasswordNotTooLong(ctx, newPassword);
+		assertPasswordNotTooLong(ctx, currentPassword);
 
 		const account = await ctx.context.internalAdapter.findCredentialAccount(
 			session.user.id,
@@ -328,24 +323,36 @@ export const changePassword = createAuthEndpoint(
 		if (!verify) {
 			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.INVALID_PASSWORD);
 		}
-		const updatedAccount = await ctx.context.internalAdapter.updateAccount(
-			account.id,
-			{
-				password: passwordHash,
+		// Revoke before writing, in one transaction, so a failure never commits
+		// the new password while the other sessions stay valid.
+		const { newSession, updatedAccount } = await runWithTransaction(
+			ctx.context.adapter,
+			async () => {
+				if (revokeOtherSessions) {
+					await ctx.context.internalAdapter.deleteUserSessions(session.user.id);
+				}
+				const updatedAccount = await ctx.context.internalAdapter.updateAccount(account.id, {
+					password: passwordHash,
+				});
+				if (!revokeOtherSessions) return { newSession: null, updatedAccount };
+				const created = await ctx.context.internalAdapter.createSession(
+					session.user.id,
+					undefined,
+					undefined,
+					undefined,
+					{ deferSecondaryStorageWrites: true },
+				);
+				if (!created) {
+					throw APIError.from(
+						"INTERNAL_SERVER_ERROR",
+						BASE_ERROR_CODES.FAILED_TO_GET_SESSION,
+					);
+				}
+				return { newSession: created, updatedAccount };
 			},
 		);
 		let token = null;
-		if (revokeOtherSessions) {
-			await ctx.context.internalAdapter.deleteUserSessions(session.user.id);
-			const newSession = await ctx.context.internalAdapter.createSession(
-				session.user.id,
-			);
-			if (!newSession) {
-				throw APIError.from(
-					"INTERNAL_SERVER_ERROR",
-					BASE_ERROR_CODES.FAILED_TO_GET_SESSION,
-				);
-			}
+		if (newSession) {
 			// set the new session cookie
 			await setSessionCookie(ctx, {
 				session: newSession,
@@ -354,17 +361,11 @@ export const changePassword = createAuthEndpoint(
 			token = newSession.token;
 		}
 
-		if (
-			updatedAccount &&
-			ctx.context.options.emailAndPassword?.onPasswordChanged
-		) {
-			const onPasswordChanged =
-				ctx.context.options.emailAndPassword.onPasswordChanged;
-			await ctx.context.runInBackgroundOrAwait(
-				Promise.resolve().then(() =>
-					onPasswordChanged({ user: session.user }, ctx.request),
-				),
-			);
+		if (updatedAccount && ctx.context.options.emailAndPassword?.onPasswordChanged) {
+			const onPasswordChanged = ctx.context.options.emailAndPassword.onPasswordChanged;
+			await ctx.context.runInBackgroundOrAwait(Promise.resolve().then(() =>
+				onPasswordChanged({ user: session.user }, ctx.request),
+			));
 		}
 
 		return ctx.json({
@@ -390,18 +391,8 @@ export const setPassword = createAuthEndpoint.serverOnly(
 	async (ctx) => {
 		const { newPassword } = ctx.body;
 		const session = ctx.context.session;
-		const minPasswordLength = ctx.context.password.config.minPasswordLength;
-		if (newPassword.length < minPasswordLength) {
-			ctx.context.logger.warn("Password is too short");
-			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.PASSWORD_TOO_SHORT);
-		}
-
-		const maxPasswordLength = ctx.context.password.config.maxPasswordLength;
-
-		if (newPassword.length > maxPasswordLength) {
-			ctx.context.logger.warn("Password is too long");
-			throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.PASSWORD_TOO_LONG);
-		}
+		assertPasswordNotTooShort(ctx, newPassword);
+		assertPasswordNotTooLong(ctx, newPassword);
 
 		const passwordHash = await ctx.context.password.hash(newPassword);
 		await ctx.context.internalAdapter.setCredentialPassword(
@@ -517,6 +508,7 @@ export const deleteUser = createAuthEndpoint(
 		const session = ctx.context.session;
 
 		if (ctx.body.password) {
+			assertPasswordNotTooLong(ctx, ctx.body.password);
 			const account = await ctx.context.internalAdapter.findCredentialAccount(
 				session.user.id,
 			);

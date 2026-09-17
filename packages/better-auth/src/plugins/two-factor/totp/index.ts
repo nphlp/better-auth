@@ -1,9 +1,11 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
 import { queueAfterTransactionHook } from "@better-auth/core/context";
 import { APIError, BASE_ERROR_CODES } from "@better-auth/core/error";
+import { base32 } from "@better-auth/utils/base32";
 import { createOTP } from "@better-auth/utils/otp";
 import * as z from "zod";
 import { sessionMiddleware } from "../../../api";
+import type { SymmetricDecryptOptions } from "../../../crypto";
 import { symmetricDecrypt } from "../../../crypto";
 import { parseUserOutput } from "../../../db/schema";
 import { shouldRequirePassword } from "../../../utils/password";
@@ -57,6 +59,20 @@ export type TOTPOptions = {
 	 */
 	disable?: boolean | undefined;
 };
+
+const BASE32_PREFIX = "base32:";
+
+/**
+ * Secrets imported from other providers are stored as `base32:<secret>`.
+ * Generated secrets never contain `:`, so they are used as-is.
+ */
+async function decryptTOTPSecret(options: SymmetricDecryptOptions) {
+	const secret = await symmetricDecrypt(options);
+	if (!secret.startsWith(BASE32_PREFIX)) {
+		return secret;
+	}
+	return base32.decode(secret.slice(BASE32_PREFIX.length).toUpperCase());
+}
 
 const generateTOTPBodySchema = z.object({
 	secret: z.string().meta({
@@ -206,7 +222,7 @@ export const totp2fa = (
 					TWO_FACTOR_ERROR_CODES.TOTP_NOT_ENABLED,
 				);
 			}
-			const secret = await symmetricDecrypt({
+			const secret = await decryptTOTPSecret({
 				key: ctx.context.secretConfig,
 				data: twoFactor.secret,
 			});
@@ -304,7 +320,7 @@ export const totp2fa = (
 				: null;
 			let status: boolean;
 			try {
-				const decrypted = await symmetricDecrypt({
+				const decrypted = await decryptTOTPSecret({
 					key: ctx.context.secretConfig,
 					data: twoFactor.secret,
 				});

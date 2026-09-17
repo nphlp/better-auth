@@ -356,7 +356,7 @@ export const router = <Option extends BetterAuthOptions>(
 			}
 			return res;
 		},
-		onError(e) {
+		async onError(e) {
 			if (isAPIError(e) && e.status === "FOUND") {
 				return;
 			}
@@ -364,7 +364,11 @@ export const router = <Option extends BetterAuthOptions>(
 				throw e;
 			}
 			if (options.onAPIError?.onError) {
-				options.onAPIError.onError(e, ctx);
+				try {
+					await options.onAPIError.onError(e, ctx);
+				} catch (hookError) {
+					ctx.logger.error("onAPIError.onError threw", hookError);
+				}
 				return;
 			}
 

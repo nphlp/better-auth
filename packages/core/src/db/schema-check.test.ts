@@ -4,6 +4,7 @@ import {
 	createSchemaCheck,
 	invalidateSchemaChecks,
 	registerSchemaCheck,
+	runtimeSchemaCheckFor,
 	schemaCheckFor,
 } from "./schema-check";
 import type { SchemaFinding } from "./schema-diff";
@@ -52,30 +53,28 @@ describe("createSchemaCheck", () => {
 		await expect(check()).rejects.toThrow(SchemaMismatchError);
 		expect(find).toHaveBeenCalledTimes(2);
 	});
-	it.each([
-		{ findings: [] },
-		{ findings: [issuerDrift] },
-	])("rechecks a pending result after invalidation (%j)", async ({
-		findings,
-	}) => {
-		const database = {};
-		let finish = (_findings: SchemaFinding[]) => {};
-		const pending = new Promise<SchemaFinding[]>((resolve) => {
-			finish = resolve;
-		});
-		const find = vi
-			.fn<() => Promise<SchemaFinding[]>>()
-			.mockReturnValueOnce(pending)
-			.mockResolvedValueOnce([]);
-		const check = createSchemaCheck(find, "database", database);
-		const older = check();
-		await Promise.resolve();
-		invalidateSchemaChecks(database);
-		finish(findings);
-		await expect(older).resolves.toBeUndefined();
-		expect(find).toHaveBeenCalledTimes(2);
-		expect(check()).toBeUndefined();
-	});
+	it.each([{ findings: [] }, { findings: [issuerDrift] }])(
+		"rechecks a pending result after invalidation (%j)",
+		async ({ findings }) => {
+			const database = {};
+			let finish = (_findings: SchemaFinding[]) => {};
+			const pending = new Promise<SchemaFinding[]>((resolve) => {
+				finish = resolve;
+			});
+			const find = vi
+				.fn<() => Promise<SchemaFinding[]>>()
+				.mockReturnValueOnce(pending)
+				.mockResolvedValueOnce([]);
+			const check = createSchemaCheck(find, "database", database);
+			const older = check();
+			await Promise.resolve();
+			invalidateSchemaChecks(database);
+			finish(findings);
+			await expect(older).resolves.toBeUndefined();
+			expect(find).toHaveBeenCalledTimes(2);
+			expect(check()).toBeUndefined();
+		},
+	);
 
 	it("turns a synchronous lookup failure into a retryable rejection", async () => {
 		const failure = new Error("connection unavailable");
@@ -139,28 +138,25 @@ describe("checksSchema", () => {
 		>();
 	});
 
-	it.for([
-		"development",
-		"production",
-		"test",
-	])("checks in %s unless disabled", async (environment, {
-		onTestFinished,
-	}) => {
-		onTestFinished(() => {
-			vi.unstubAllEnvs();
+	it.for(["development", "production", "test"])(
+		"checks in %s unless disabled",
+		async (environment, { onTestFinished }) => {
+			onTestFinished(() => {
+				vi.unstubAllEnvs();
+				vi.resetModules();
+			});
+			vi.stubEnv("NODE_ENV", environment);
 			vi.resetModules();
-		});
-		vi.stubEnv("NODE_ENV", environment);
-		vi.resetModules();
-		const { checksSchema } = await import("./schema-check");
-		expect(checksSchema({})).toBe(true);
-		expect(
-			checksSchema({ advanced: { database: { validateSchema: true } } }),
-		).toBe(true);
-		expect(
-			checksSchema({ advanced: { database: { validateSchema: false } } }),
-		).toBe(false);
-	});
+			const { checksSchema } = await import("./schema-check");
+			expect(checksSchema({})).toBe(true);
+			expect(
+				checksSchema({ advanced: { database: { validateSchema: true } } }),
+			).toBe(true);
+			expect(
+				checksSchema({ advanced: { database: { validateSchema: false } } }),
+			).toBe(false);
+		},
+	);
 });
 
 describe("schema check registry", () => {
@@ -170,5 +166,16 @@ describe("schema check registry", () => {
 		registerSchemaCheck(adapter, check);
 		expect(schemaCheckFor(adapter)).toBe(check);
 		expect(schemaCheckFor({})).toBeUndefined();
+	});
+
+	it("keeps an explicit check available when runtime validation is disabled", async () => {
+		const adapter = {};
+		const find = vi.fn(async () => []);
+		const check = createSchemaCheck(find, "database");
+		registerSchemaCheck(adapter, check, { runtimeEnabled: false });
+
+		expect(runtimeSchemaCheckFor(adapter)).toBeUndefined();
+		await schemaCheckFor(adapter)?.();
+		expect(find).toHaveBeenCalledOnce();
 	});
 });

@@ -1,6 +1,7 @@
 import type { BetterAuthOptions } from "@better-auth/core";
 import {
 	getExpectedSchema,
+	runtimeSchemaCheckFor,
 	schemaCheckFor,
 } from "@better-auth/core/db/internal";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
@@ -72,39 +73,39 @@ describe("relations-v2 schema validation", () => {
 		});
 	});
 
-	it.each([
-		"relations",
-		"schema",
-	] as const)("accepts a complete %s configuration", async (source) => {
-		const client = new Database(":memory:");
-		try {
-			const expected = getExpectedSchema({});
-			function tableFor(name: string) {
-				const columns: Record<string, ReturnType<typeof text>> = {};
-				for (const field of Object.keys(expected[name]!.fields)) {
-					columns[field] = text(field);
+	it.each(["relations", "schema"] as const)(
+		"accepts a complete %s configuration",
+		async (source) => {
+			const client = new Database(":memory:");
+			try {
+				const expected = getExpectedSchema({});
+				function tableFor(name: string) {
+					const columns: Record<string, ReturnType<typeof text>> = {};
+					for (const field of Object.keys(expected[name]!.fields)) {
+						columns[field] = text(field);
+					}
+					return sqliteTable(name, { ...columns, id: text("id").primaryKey() });
 				}
-				return sqliteTable(name, { ...columns, id: text("id").primaryKey() });
+				const schema = {
+					user: tableFor("user"),
+					session: tableFor("session"),
+					account: tableFor("account"),
+					verification: tableFor("verification"),
+				};
+				const db =
+					source === "relations"
+						? drizzle({ client, relations: defineRelations(schema) })
+						: drizzle({ client, schema });
+				const check = schemaCheckFor(
+					drizzleAdapter(db, { provider: "sqlite" })({}),
+				);
+				expect(check).toBeTypeOf("function");
+				await expect(check!()).resolves.toBeUndefined();
+			} finally {
+				client.close();
 			}
-			const schema = {
-				user: tableFor("user"),
-				session: tableFor("session"),
-				account: tableFor("account"),
-				verification: tableFor("verification"),
-			};
-			const db =
-				source === "relations"
-					? drizzle({ client, relations: defineRelations(schema) })
-					: drizzle({ client, schema });
-			const check = schemaCheckFor(
-				drizzleAdapter(db, { provider: "sqlite" })({}),
-			);
-			expect(check).toBeTypeOf("function");
-			await expect(check!()).resolves.toBeUndefined();
-		} finally {
-			client.close();
-		}
-	});
+		},
+	);
 
 	it("uses relation tables before fullSchema and preserves renamed model keys", async ({
 		onTestFinished,
@@ -136,7 +137,7 @@ describe("relations-v2 schema validation", () => {
 		});
 	});
 
-	it("does not register a check when validation is disabled", ({
+	it("keeps explicit validation when runtime validation is disabled", async ({
 		onTestFinished,
 	}) => {
 		const client = new Database(":memory:");
@@ -147,6 +148,11 @@ describe("relations-v2 schema validation", () => {
 		const adapter = drizzleAdapter(db, { provider: "sqlite" })({
 			advanced: { database: { validateSchema: false } },
 		});
-		expect(schemaCheckFor(adapter)).toBeUndefined();
+		const explicitCheck = schemaCheckFor(adapter);
+		expect(runtimeSchemaCheckFor(adapter)).toBeUndefined();
+		expect(explicitCheck).toBeTypeOf("function");
+		await expect(explicitCheck!()).rejects.toMatchObject({
+			code: "SCHEMA_MISMATCH",
+		});
 	});
 });

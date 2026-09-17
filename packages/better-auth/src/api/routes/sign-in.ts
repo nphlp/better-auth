@@ -23,6 +23,7 @@ import {
 import { handleOAuthUserInfo } from "../../oauth2/link-account";
 import { getOAuthCallbackPath } from "../../oauth2/utils";
 import { generateIdTokenNonce, generateState } from "../../utils";
+import { assertPasswordNotTooLong } from "../../utils/password";
 import { safeCloneRequest } from "../../utils/request";
 import { formCsrfMiddleware } from "../middlewares/origin-check";
 import {
@@ -345,6 +346,7 @@ export const signInSocial = <O extends BetterAuthOptions>() =>
 					callbackURL: c.body.callbackURL,
 					disableSignUp:
 						(provider.disableImplicitSignUp && !c.body.requestSignUp) ||
+						provider.options?.disableSignUp ||
 						provider.disableSignUp,
 					source: {
 						method: "oauth",
@@ -527,6 +529,7 @@ export const signInEmail = <O extends BetterAuthOptions>() =>
 			if (!isValidEmail.success) {
 				throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.INVALID_EMAIL);
 			}
+			assertPasswordNotTooLong(ctx, password);
 			const userRecord = await ctx.context.internalAdapter.findUserByEmail(
 				email.toLowerCase(),
 				{ includeAccounts: true },
