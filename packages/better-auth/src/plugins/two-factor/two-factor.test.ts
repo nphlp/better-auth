@@ -17,6 +17,7 @@ describe("two factor", async () => {
 	const { testUser, customFetchImpl, sessionSetter, db, auth } =
 		await getTestInstance({
 			secret: DEFAULT_SECRET,
+			verification: { storeIdentifier: "hashed" },
 			session: {
 				cookieCache: {
 					enabled: true,

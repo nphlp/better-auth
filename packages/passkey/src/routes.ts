@@ -1084,7 +1084,7 @@ export const deletePasskey = (pluginOptions?: PasskeyOptions) =>
 			method: "POST",
 			body: deletePasskeyBodySchema,
 			use: [
-				sessionMiddleware,
+				freshSessionMiddleware,
 				requireResourceOwnership({
 					model: "passkey",
 					idParam: "id",
