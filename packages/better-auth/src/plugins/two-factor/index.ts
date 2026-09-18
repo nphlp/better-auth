@@ -628,7 +628,7 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 						const identifier = `2fa:${method}:${generateRandomString(20)}`;
 						const expiresAt = new Date(Date.now() + maxAge * 1000);
 						await ctx.context.internalAdapter.createVerificationValue({
-							value: data.user.id,
+							value: JSON.stringify({ userId: data.user.id, method }),
 							identifier,
 							expiresAt,
 						});

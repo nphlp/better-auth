@@ -19,6 +19,31 @@ import type {
 	UserWithTwoFactor,
 } from "./types";
 
+const parseChallenge = (value: string) => {
+	const fallback = { userId: value, method: undefined };
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (
+			typeof parsed === "object" &&
+			parsed !== null &&
+			"userId" in parsed &&
+			typeof parsed.userId === "string" &&
+			parsed.userId
+		) {
+			return {
+				userId: parsed.userId,
+				method:
+					"method" in parsed && typeof parsed.method === "string"
+						? parsed.method
+						: undefined,
+			};
+		}
+	} catch {
+		return fallback;
+	}
+	return fallback;
+};
+
 export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 	const invalid = (errorKey: keyof typeof TWO_FACTOR_ERROR_CODES) => {
 		throw APIError.from("UNAUTHORIZED", TWO_FACTOR_ERROR_CODES[errorKey]);
@@ -49,8 +74,9 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 				TWO_FACTOR_ERROR_CODES.INVALID_TWO_FACTOR_COOKIE,
 			);
 		}
+		const challenge = parseChallenge(verificationToken.value);
 		const user = (await ctx.context.internalAdapter.findUserById(
-			verificationToken.value,
+			challenge.userId,
 		)) as UserWithTwoFactor;
 		if (!user) {
 			throw APIError.from(
@@ -73,7 +99,10 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 					await ctx.context.internalAdapter.consumeVerificationValue(
 						signedTwoFactorCookie,
 					);
-				if (!consumed || consumed.value !== user.id) {
+				const consumedChallenge = consumed
+					? parseChallenge(consumed.value)
+					: null;
+				if (!consumed || consumedChallenge?.userId !== user.id) {
 					expireCookie(ctx, twoFactorCookie);
 					throw APIError.from(
 						"UNAUTHORIZED",
@@ -81,7 +110,7 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 					);
 				}
 				const session = await ctx.context.internalAdapter.createSession(
-					consumed.value,
+					consumedChallenge.userId,
 					!!dontRememberMe,
 				);
 				if (!session) {
@@ -90,9 +119,11 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 						code: "FAILED_TO_CREATE_SESSION",
 					});
 				}
-				const method = consumed.identifier.startsWith("2fa:")
-					? consumed.identifier.split(":")[1]
-					: undefined;
+				const method =
+					consumedChallenge.method ??
+					(consumed.identifier.startsWith("2fa:")
+						? consumed.identifier.split(":")[1]
+						: undefined);
 				Object.assign(ctx.context, { completedTwoFactorMethod: method });
 				await setSessionCookie(ctx, { isLogin: true, session, user });
 				// Always clear the two factor cookie after successful verification

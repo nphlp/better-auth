@@ -57,6 +57,7 @@ describe("passkey", async () => {
 	const {
 		auth,
 		client,
+		db,
 		signInWithTestUser,
 		sessionSetter,
 		cookieSetter,
@@ -632,6 +633,46 @@ describe("passkey", async () => {
 			},
 		});
 		expect(deleteResult.status).toBe(true);
+	});
+
+	it("should require a fresh session to delete a passkey", async () => {
+		const { headers, user } = await signInWithTestUser();
+		const context = await auth.$context;
+		const currentSession = await auth.api.getSession({ headers });
+		expect(currentSession).not.toBeNull();
+		await db.update({
+			model: "session",
+			where: [{ field: "id", value: currentSession!.session.id }],
+			update: { createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
+		});
+		const passkey = await context.adapter.create<Omit<Passkey, "id">, Passkey>({
+			model: "passkey",
+			data: {
+				userId: user.id,
+				publicKey: "mockPublicKey",
+				name: "mockName",
+				counter: 0,
+				deviceType: "singleDevice",
+				credentialID: "stale-session-delete-test",
+				createdAt: new Date(),
+				backedUp: false,
+				transports: "mockTransports",
+				aaguid: "mockAAGUID",
+			} satisfies Omit<Passkey, "id">,
+		});
+
+		await expect(
+			auth.api.deletePasskey({
+				headers,
+				body: { id: passkey.id },
+			}),
+		).rejects.toMatchObject({ status: "FORBIDDEN" });
+		expect(
+			await context.adapter.findOne({
+				model: "passkey",
+				where: [{ field: "id", value: passkey.id }],
+			}),
+		).not.toBeNull();
 	});
 
 	/**
