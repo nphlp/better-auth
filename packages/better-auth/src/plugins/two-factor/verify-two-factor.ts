@@ -15,7 +15,11 @@ import {
 import { TWO_FACTOR_ERROR_CODES } from "./error-code";
 import type { UserWithTwoFactorGeneration } from "./trusted-device";
 import { serializeTrustedDeviceValue } from "./trusted-device";
-import type { TwoFactorOptions, TwoFactorTable } from "./types";
+import type {
+	TwoFactorOptions,
+	TwoFactorTable,
+	UserWithTwoFactor,
+} from "./types";
 
 const parseChallenge = (value: string) => {
 	const fallback = { userId: value, method: undefined };
@@ -162,7 +166,7 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 				}
 				return ctx.json({
 					token: session.token,
-					user: parseUserOutput(ctx.context.options, user),
+					user: parseUserOutput(ctx.context.options, user) as UserWithTwoFactor,
 				});
 			},
 			invalid,
