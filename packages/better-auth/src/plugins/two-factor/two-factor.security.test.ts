@@ -3,6 +3,7 @@ import { createAuthMiddleware } from "@better-auth/core/api";
 import type { SecondaryStorage } from "@better-auth/core/db";
 import { createOTP } from "@better-auth/utils/otp";
 import { describe, expect, it } from "vitest";
+import { parseSetCookieHeader } from "../../cookies";
 import { symmetricDecrypt, symmetricEncrypt } from "../../crypto";
 import { convertSetCookieToCookie } from "../../test-utils/headers";
 import { getTestInstance } from "../../test-utils/test-instance";
@@ -456,13 +457,26 @@ describe("two-factor security: 2FA challenge is single-use and expiry-bounded", 
 		throw new Error("failed to enable 2FA for test user");
 	}
 
-	async function startChallenge(): Promise<Headers> {
+	async function startChallenge(): Promise<{
+		headers: Headers;
+		identifier: string;
+	}> {
 		const res = await auth.api.signInEmail({
 			body: { email: testUser.email, password: testUser.password },
 			asResponse: true,
 		});
 		expect(res.status).toBe(200);
-		return convertSetCookieToCookie(res.headers);
+		const signedChallenge = parseSetCookieHeader(
+			res.headers.get("Set-Cookie") || "",
+		).get("better-auth.two_factor")?.value;
+		expect(signedChallenge).toBeDefined();
+		return {
+			headers: convertSetCookieToCookie(res.headers),
+			identifier: signedChallenge!.substring(
+				0,
+				signedChallenge!.lastIndexOf("."),
+			),
+		};
 	}
 
 	function countSessions(): Promise<Session[]> {
@@ -473,10 +487,10 @@ describe("two-factor security: 2FA challenge is single-use and expiry-bounded", 
 	}
 
 	it("rejects an expired two-factor sign-in challenge even with a valid TOTP", async () => {
-		const challengeHeaders = await startChallenge();
+		const { headers: challengeHeaders, identifier } = await startChallenge();
 		const challengeRow = await db.findOne<Verification>({
 			model: "verification",
-			where: [{ field: "value", value: userId }],
+			where: [{ field: "identifier", value: identifier }],
 		});
 		expect(challengeRow).not.toBeNull();
 
@@ -518,7 +532,7 @@ describe("two-factor security: 2FA challenge is single-use and expiry-bounded", 
 	});
 
 	it("two concurrent verifications of the same challenge yield exactly one session", async () => {
-		const challengeHeaders = await startChallenge();
+		const { headers: challengeHeaders } = await startChallenge();
 		const sessionsBefore = await countSessions();
 		const code = await createOTP(secret).totp();
 
