@@ -27,6 +27,7 @@ import { rotateTwoFactorSession, runTwoFactorMutation } from "./mutation";
 import { otp2fa } from "./otp";
 import { schema } from "./schema";
 import { totp2fa } from "./totp";
+import type { UserWithTwoFactorGeneration } from "./trusted-device";
 import {
 	matchesTrustedDeviceValue,
 	serializeTrustedDeviceValue,
@@ -528,7 +529,7 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 						if (!data) {
 							return;
 						}
-						const user = data.user as UserWithTwoFactor;
+						const user = data.user as UserWithTwoFactorGeneration;
 
 						if (!user.twoFactorEnabled) {
 							return;

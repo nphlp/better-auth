@@ -1,7 +1,7 @@
 import { APIError, BASE_ERROR_CODES } from "@better-auth/core/error";
 import { base32 } from "@better-auth/utils/base32";
 import { createOTP } from "@better-auth/utils/otp";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createAuthClient } from "../../client";
 import { applySetCookies, parseSetCookieHeader } from "../../cookies";
 import { symmetricDecrypt, symmetricEncrypt } from "../../crypto";
@@ -12,6 +12,8 @@ import { anonymous } from "../anonymous";
 import { magicLink } from "../magic-link";
 import { TWO_FACTOR_ERROR_CODES, twoFactor, twoFactorClient } from ".";
 import type { TwoFactorTable, UserWithTwoFactor } from "./types";
+
+expectTypeOf<UserWithTwoFactor>().not.toHaveProperty("twoFactorVersion");
 
 describe("two factor", async () => {
 	let OTP = "";

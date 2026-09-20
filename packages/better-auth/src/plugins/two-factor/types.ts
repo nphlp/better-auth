@@ -109,10 +109,6 @@ export interface TwoFactorOptions {
 
 export interface UserWithTwoFactor extends User {
 	/**
-	 * Internal generation of the user's two-factor configuration.
-	 */
-	twoFactorVersion: number;
-	/**
 	 * If the user has enabled two factor authentication.
 	 */
 	twoFactorEnabled: boolean;
