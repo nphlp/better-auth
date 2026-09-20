@@ -116,6 +116,11 @@ Passkey `requireUserVerification` applies to option generation and cryptographic
 ceremonies. Test the verifier boundary and actual browser assertions; requesting UV in browser
 options alone does not enforce the server policy. Keep every new option disabled by default.
 
+Trusted-device records are rotating single-use credentials. Sign-in and two-factor disabling consume
+them through `internalAdapter.consumeVerificationValue`, which claims one concurrent winner and accepts
+the legacy plain identifier during a global hash rollout. Never restore a separate find-then-delete
+pair or a hash-only deletion for this path.
+
 `lastLoginMethod` must follow `twoFactor` in the plugin array. Initialization rejects reversed
 ordering because its cookie hook must see the completed two-factor decision. This completion
 guarantee applies to the cookie; the optional database field retains its existing provisioning
