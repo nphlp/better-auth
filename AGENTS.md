@@ -119,7 +119,11 @@ options alone does not enforce the server policy. Keep every new option disabled
 Trusted-device records are rotating single-use credentials. Sign-in and two-factor disabling consume
 them through `internalAdapter.consumeVerificationValue`, which claims one concurrent winner and accepts
 the legacy plain identifier during a global hash rollout. Never restore a separate find-then-delete
-pair or a hash-only deletion for this path.
+pair or a hash-only deletion for this path. Their server-side value binds the user to the current
+private `twoFactorVersion`. Factor activation and deactivation advance that generation, so disabling
+and later re-enabling or replacing a factor invalidates trust granted under the previous enrollment
+across all browsers. Pre-generation user-id-only trust values fail closed and are consumed on their
+next use. Regenerating backup codes does not rotate this generation.
 
 `lastLoginMethod` must follow `twoFactor` in the plugin array. Initialization rejects reversed
 ordering because its cookie hook must see the completed two-factor decision. This completion

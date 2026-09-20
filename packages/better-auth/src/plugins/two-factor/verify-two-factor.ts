@@ -13,6 +13,7 @@ import {
 	TWO_FACTOR_COOKIE_NAME,
 } from "./constant";
 import { TWO_FACTOR_ERROR_CODES } from "./error-code";
+import { serializeTrustedDeviceValue } from "./trusted-device";
 import type {
 	TwoFactorOptions,
 	TwoFactorTable,
@@ -149,7 +150,7 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 						`${user.id}!${trustIdentifier}`,
 					);
 					await ctx.context.internalAdapter.createVerificationValue({
-						value: user.id,
+						value: serializeTrustedDeviceValue(user),
 						identifier: trustIdentifier,
 						expiresAt: new Date(Date.now() + maxAge * 1000),
 					});

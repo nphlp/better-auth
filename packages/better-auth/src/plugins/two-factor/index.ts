@@ -27,6 +27,10 @@ import { rotateTwoFactorSession, runTwoFactorMutation } from "./mutation";
 import { otp2fa } from "./otp";
 import { schema } from "./schema";
 import { totp2fa } from "./totp";
+import {
+	matchesTrustedDeviceValue,
+	serializeTrustedDeviceValue,
+} from "./trusted-device";
 import type {
 	TwoFactorOptions,
 	TwoFactorTable,
@@ -524,8 +528,9 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 						if (!data) {
 							return;
 						}
+						const user = data.user as UserWithTwoFactor;
 
-						if (!data?.user.twoFactorEnabled) {
+						if (!user.twoFactorEnabled) {
 							return;
 						}
 
@@ -547,10 +552,7 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 								const expectedToken = await createHMAC(
 									"SHA-256",
 									"base64urlnopad",
-								).sign(
-									ctx.context.secret,
-									`${data.user.id}!${trustIdentifier}`,
-								);
+								).sign(ctx.context.secret, `${user.id}!${trustIdentifier}`);
 
 								if (token === expectedToken) {
 									// HMAC is valid; atomically claim the server-side record
@@ -560,7 +562,7 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 										);
 									if (
 										verificationRecord &&
-										verificationRecord.value === data.user.id
+										matchesTrustedDeviceValue(verificationRecord.value, user)
 									) {
 										const newTrustIdentifier = `trust-device-${generateRandomString(32)}`;
 										const newToken = await createHMAC(
@@ -568,10 +570,10 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 											"base64urlnopad",
 										).sign(
 											ctx.context.secret,
-											`${data.user.id}!${newTrustIdentifier}`,
+											`${user.id}!${newTrustIdentifier}`,
 										);
 										await ctx.context.internalAdapter.createVerificationValue({
-											value: data.user.id,
+											value: serializeTrustedDeviceValue(user),
 											identifier: newTrustIdentifier,
 											expiresAt: new Date(
 												Date.now() + trustDeviceMaxAge * 1000,
