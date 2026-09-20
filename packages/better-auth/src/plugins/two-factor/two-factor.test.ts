@@ -323,9 +323,10 @@ describe("two factor", async () => {
 			},
 		});
 		expect(verification.data?.user).not.toHaveProperty("twoFactorVersion");
-		expectTypeOf(verification.data!.user).not.toHaveProperty(
-			"twoFactorVersion",
-		);
+		type VerifiedUser = NonNullable<typeof verification.data>["user"];
+		expectTypeOf<
+			Extract<VerifiedUser, { twoFactorVersion: unknown }>
+		>().toEqualTypeOf<never>();
 		const token = parsedCookies.get("better-auth.session_token")?.value;
 		expect(token?.length).toBeGreaterThan(0);
 		const currentBackupCodes = await auth.api.viewBackupCodes({
