@@ -412,7 +412,10 @@ export const backupCode2fa = (opts: BackupCodeOptions) => {
 					}
 					return ctx.json({
 						token: session.session?.token,
-						user: parseUserOutput(ctx.context.options, session.user),
+						user: parseUserOutput(
+							ctx.context.options,
+							session.user,
+						) as UserWithTwoFactor,
 					});
 				},
 			),
