@@ -1,6 +1,12 @@
 import type { UserWithTwoFactor } from "./types";
 
-export function serializeTrustedDeviceValue(user: UserWithTwoFactor): string {
+export type UserWithTwoFactorGeneration = UserWithTwoFactor & {
+	twoFactorVersion: number;
+};
+
+export function serializeTrustedDeviceValue(
+	user: UserWithTwoFactorGeneration,
+): string {
 	return JSON.stringify({
 		userId: user.id,
 		twoFactorVersion: user.twoFactorVersion,
@@ -9,7 +15,7 @@ export function serializeTrustedDeviceValue(user: UserWithTwoFactor): string {
 
 export function matchesTrustedDeviceValue(
 	value: string,
-	user: UserWithTwoFactor,
+	user: UserWithTwoFactorGeneration,
 ): boolean {
 	try {
 		const parsed: unknown = JSON.parse(value);

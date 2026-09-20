@@ -13,12 +13,9 @@ import {
 	TWO_FACTOR_COOKIE_NAME,
 } from "./constant";
 import { TWO_FACTOR_ERROR_CODES } from "./error-code";
+import type { UserWithTwoFactorGeneration } from "./trusted-device";
 import { serializeTrustedDeviceValue } from "./trusted-device";
-import type {
-	TwoFactorOptions,
-	TwoFactorTable,
-	UserWithTwoFactor,
-} from "./types";
+import type { TwoFactorOptions, TwoFactorTable } from "./types";
 
 const parseChallenge = (value: string) => {
 	const fallback = { userId: value, method: undefined };
@@ -78,7 +75,7 @@ export async function verifyTwoFactor(ctx: GenericEndpointContext) {
 		const challenge = parseChallenge(verificationToken.value);
 		const user = (await ctx.context.internalAdapter.findUserById(
 			challenge.userId,
-		)) as UserWithTwoFactor;
+		)) as UserWithTwoFactorGeneration;
 		if (!user) {
 			throw APIError.from(
 				"UNAUTHORIZED",
