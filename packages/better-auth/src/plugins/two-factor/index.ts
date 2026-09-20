@@ -493,7 +493,7 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 							if (disableTrustValue) {
 								const [, trustId] = disableTrustValue.split("!");
 								if (trustId) {
-									await ctx.context.internalAdapter.deleteVerificationByIdentifier(
+									await ctx.context.internalAdapter.consumeVerificationValue(
 										trustId,
 									);
 								}
@@ -553,19 +553,15 @@ export const twoFactor = <O extends TwoFactorOptions>(options?: O) => {
 								);
 
 								if (token === expectedToken) {
-									// HMAC is valid; verify the server-side record
+									// HMAC is valid; atomically claim the server-side record
 									const verificationRecord =
-										await ctx.context.internalAdapter.findVerificationValue(
+										await ctx.context.internalAdapter.consumeVerificationValue(
 											trustIdentifier,
 										);
 									if (
 										verificationRecord &&
-										verificationRecord.value === data.user.id &&
-										verificationRecord.expiresAt > new Date()
+										verificationRecord.value === data.user.id
 									) {
-										await ctx.context.internalAdapter.deleteVerificationByIdentifier(
-											trustIdentifier,
-										);
 										const newTrustIdentifier = `trust-device-${generateRandomString(32)}`;
 										const newToken = await createHMAC(
 											"SHA-256",

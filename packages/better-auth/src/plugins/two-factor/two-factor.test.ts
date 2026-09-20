@@ -1299,6 +1299,140 @@ describe("trust device server-side validation", async () => {
 	});
 });
 
+describe("hashed trust device transition", () => {
+	async function prepareLegacyTrustDevice() {
+		let otp = "";
+		const { auth, signInWithTestUser, testUser, db } = await getTestInstance({
+			secret: DEFAULT_SECRET,
+			verification: { storeIdentifier: "hashed" },
+			plugins: [
+				twoFactor({
+					otpOptions: {
+						sendOTP({ otp: nextOtp }) {
+							otp = nextOtp;
+						},
+					},
+				}),
+			],
+		});
+
+		const { headers } = await signInWithTestUser();
+		await auth.api.enableTwoFactor({
+			body: { password: testUser.password, method: "otp" },
+			headers,
+		});
+
+		const signInRes = await auth.api.signInEmail({
+			body: {
+				email: testUser.email,
+				password: testUser.password,
+			},
+			asResponse: true,
+		});
+		const twoFactorHeaders = convertSetCookieToCookie(signInRes.headers);
+		await auth.api.sendTwoFactorOTP({
+			headers: twoFactorHeaders,
+			body: {},
+		});
+
+		const verifyRes = await auth.api.verifyTwoFactorOTP({
+			headers: twoFactorHeaders,
+			body: { code: otp, trustDevice: true },
+			asResponse: true,
+		});
+		expect(verifyRes.status).toBe(200);
+
+		const parsed = parseSetCookieHeader(
+			verifyRes.headers.get("Set-Cookie") || "",
+		);
+		const trustDeviceCookieValue = parsed.get(
+			"better-auth.trust_device",
+		)?.value;
+		expect(trustDeviceCookieValue).toBeDefined();
+		const unsignedValue = trustDeviceCookieValue!.substring(
+			0,
+			trustDeviceCookieValue!.lastIndexOf("."),
+		);
+		const [, trustIdentifier] = unsignedValue.split("!");
+		expect(trustIdentifier).toBeDefined();
+
+		const ctx = await auth.$context;
+		const verificationRecord = await ctx.internalAdapter.findVerificationValue(
+			trustIdentifier!,
+		);
+		expect(verificationRecord).not.toBeNull();
+		await db.update({
+			model: "verification",
+			where: [{ field: "id", value: verificationRecord!.id }],
+			update: { identifier: trustIdentifier! },
+		});
+
+		return {
+			auth,
+			db,
+			testUser,
+			trustDeviceCookieValue: trustDeviceCookieValue!,
+			trustIdentifier: trustIdentifier!,
+			trustedSessionHeaders: convertSetCookieToCookie(verifyRes.headers),
+		};
+	}
+
+	it("consumes a legacy trust record exactly once under concurrent sign-in", async () => {
+		const { auth, db, testUser, trustDeviceCookieValue, trustIdentifier } =
+			await prepareLegacyTrustDevice();
+		const signIn = () =>
+			auth.api.signInEmail({
+				body: {
+					email: testUser.email,
+					password: testUser.password,
+				},
+				headers: new Headers({
+					cookie: `better-auth.trust_device=${trustDeviceCookieValue}`,
+				}),
+				asResponse: true,
+			});
+
+		const payloads = await Promise.all(
+			(await Promise.all([signIn(), signIn()])).map(
+				async (response) =>
+					(await response.json()) as {
+						twoFactorRedirect?: boolean;
+						user?: { email: string };
+					},
+			),
+		);
+
+		expect(payloads.filter((payload) => payload.user)).toHaveLength(1);
+		expect(
+			payloads.filter((payload) => payload.twoFactorRedirect === true),
+		).toHaveLength(1);
+		expect(
+			await db.findOne({
+				model: "verification",
+				where: [{ field: "identifier", value: trustIdentifier }],
+			}),
+		).toBeNull();
+	});
+
+	it("revokes a legacy trust record when disabling two factor", async () => {
+		const { auth, db, testUser, trustIdentifier, trustedSessionHeaders } =
+			await prepareLegacyTrustDevice();
+
+		const disableRes = await auth.api.disableTwoFactor({
+			headers: trustedSessionHeaders,
+			body: { password: testUser.password },
+			asResponse: true,
+		});
+		expect(disableRes.status).toBe(200);
+		expect(
+			await db.findOne({
+				model: "verification",
+				where: [{ field: "identifier", value: trustIdentifier }],
+			}),
+		).toBeNull();
+	});
+});
+
 describe("trustDeviceMaxAge", async () => {
 	const customMaxAge = 7 * 24 * 60 * 60; // 7 days instead of default 30
 
