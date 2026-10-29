@@ -1313,6 +1313,44 @@ const verificationTableOptions = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("change-email strategy: verification-table", async () => {
+	it.each([
+		{ callback: "/settings#pending", absolute: false },
+		{ callback: "/settings?tab=email#pending", absolute: false },
+		{
+			callback: "/settings?return=%2Fplan%3Fa%3D1%26b%3D2#pending",
+			absolute: false,
+		},
+		{ callback: "/settings?tab=email#pending", absolute: true },
+	])(
+		"keeps verification failure parameters before callback fragments ($callback, absolute=$absolute)",
+		async ({ callback, absolute }) => {
+			const { auth } = await getTestInstance(verificationTableOptions());
+			const context = await auth.$context;
+			const expected = new URL(callback, context.baseURL);
+			const requestURL = new URL(
+				`${context.baseURL}/verify-email-change/missing-user/invalid-token`,
+			);
+			requestURL.searchParams.set(
+				"callbackURL",
+				absolute ? expected.href : callback,
+			);
+
+			const response = await auth.handler(new Request(requestURL));
+			expect(response.status).toBe(302);
+			const location = response.headers.get("location");
+			expect(location).not.toBeNull();
+			const redirected = new URL(location!, context.baseURL);
+			expect(redirected.searchParams.get("error")).toBe("INVALID_TOKEN");
+			expect(redirected.pathname).toBe(expected.pathname);
+			expect(redirected.hash).toBe(expected.hash);
+			if (expected.search) {
+				expect(redirected.search).toBe(
+					`${expected.search}&error=INVALID_TOKEN`,
+				);
+			}
+		},
+	);
+
 	it("stores pendingEmail and leaves the current email untouched", async () => {
 		const onChangeEmailRequested = vi.fn();
 		const { client, db, signInWithTestUser } = await getTestInstance(
@@ -1677,7 +1715,6 @@ describe("change-email strategy: jwt is the default", async () => {
 		expect(res.error?.status).toBe(404);
 	});
 });
-
 
 /**
  * @see https://github.com/better-auth/better-auth/issues/11323

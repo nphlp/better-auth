@@ -118,81 +118,81 @@ describe("authentication lifecycle completion", () => {
 		}
 	});
 
-	it.each([
-		"zero",
-		"throw",
-	] as const)("does not enable the account or rotate its session when factor verification fails: %s", async (failure) => {
-		const enabled = vi.fn();
-		const { auth, db, client, signInWithTestUser, testUser } =
-			await getTestInstance(
-				{ plugins: [twoFactor({ onTotpEnabled: enabled })] },
-				{ clientOptions: { plugins: [twoFactorClient()] } },
-			);
-		const { headers, user } = await signInWithTestUser();
-		const before = await auth.api.getSession({ headers });
-		const enrollment = await client.twoFactor.enable(
-			{ password: testUser.password, method: "totp" },
-			{ headers },
-		);
-		if (enrollment.data?.method !== "totp")
-			throw new Error("Expected TOTP enrollment");
-		const factor = await db.findOne<{ secret: string }>({
-			model: "twoFactor",
-			where: [{ field: "userId", value: user.id }],
-		});
-		const secret = await symmetricDecrypt({
-			key: (await auth.$context).secretConfig,
-			data: factor!.secret,
-		});
-		const context = await auth.$context;
-		const sessionsBefore = await db.findMany({
-			model: "session",
-			where: [{ field: "userId", value: user.id }],
-		});
-		const transaction = context.adapter.transaction.bind(context.adapter);
-		const spy = vi
-			.spyOn(context.adapter, "transaction")
-			.mockImplementation(async (callback) =>
-				transaction(async (tx) =>
-					callback({
-						...tx,
-						updateMany: async (input) => {
-							if (input.model === "twoFactor") {
-								if (failure === "throw")
-									throw new Error("Factor storage unavailable");
-								return 0;
-							}
-							return tx.updateMany(input);
-						},
-					}),
-				),
-			);
-		try {
-			const result = await client.twoFactor.verifyTotp(
-				{ code: await createOTP(secret).totp() },
+	it.each(["zero", "throw"] as const)(
+		"does not enable the account or rotate its session when factor verification fails: %s",
+		async (failure) => {
+			const enabled = vi.fn();
+			const { auth, db, client, signInWithTestUser, testUser } =
+				await getTestInstance(
+					{ plugins: [twoFactor({ onTotpEnabled: enabled })] },
+					{ clientOptions: { plugins: [twoFactorClient()] } },
+				);
+			const { headers, user } = await signInWithTestUser();
+			const before = await auth.api.getSession({ headers });
+			const enrollment = await client.twoFactor.enable(
+				{ password: testUser.password, method: "totp" },
 				{ headers },
 			);
-			expect(result.error).not.toBeNull();
-			expect(enabled).not.toHaveBeenCalled();
-			expect(
-				await db.findOne({
-					model: "user",
-					where: [{ field: "id", value: user.id }],
-				}),
-			).toMatchObject({ twoFactorEnabled: false });
-			expect((await auth.api.getSession({ headers }))?.session.token).toBe(
-				before?.session.token,
-			);
-			expect(
-				await db.findMany({
-					model: "session",
-					where: [{ field: "userId", value: user.id }],
-				}),
-			).toEqual(sessionsBefore);
-		} finally {
-			spy.mockRestore();
-		}
-	});
+			if (enrollment.data?.method !== "totp")
+				throw new Error("Expected TOTP enrollment");
+			const factor = await db.findOne<{ secret: string }>({
+				model: "twoFactor",
+				where: [{ field: "userId", value: user.id }],
+			});
+			const secret = await symmetricDecrypt({
+				key: (await auth.$context).secretConfig,
+				data: factor!.secret,
+			});
+			const context = await auth.$context;
+			const sessionsBefore = await db.findMany({
+				model: "session",
+				where: [{ field: "userId", value: user.id }],
+			});
+			const transaction = context.adapter.transaction.bind(context.adapter);
+			const spy = vi
+				.spyOn(context.adapter, "transaction")
+				.mockImplementation(async (callback) =>
+					transaction(async (tx) =>
+						callback({
+							...tx,
+							updateMany: async (input) => {
+								if (input.model === "twoFactor") {
+									if (failure === "throw")
+										throw new Error("Factor storage unavailable");
+									return 0;
+								}
+								return tx.updateMany(input);
+							},
+						}),
+					),
+				);
+			try {
+				const result = await client.twoFactor.verifyTotp(
+					{ code: await createOTP(secret).totp() },
+					{ headers },
+				);
+				expect(result.error).not.toBeNull();
+				expect(enabled).not.toHaveBeenCalled();
+				expect(
+					await db.findOne({
+						model: "user",
+						where: [{ field: "id", value: user.id }],
+					}),
+				).toMatchObject({ twoFactorEnabled: false });
+				expect((await auth.api.getSession({ headers }))?.session.token).toBe(
+					before?.session.token,
+				);
+				expect(
+					await db.findMany({
+						model: "session",
+						where: [{ field: "userId", value: user.id }],
+					}),
+				).toEqual(sessionsBefore);
+			} finally {
+				spy.mockRestore();
+			}
+		},
+	);
 
 	it("does not verify a replaced enrollment with the previous secret's code", async () => {
 		const enabled = vi.fn();
@@ -266,186 +266,186 @@ describe("authentication lifecycle completion", () => {
 		(["totp", "otp", "immediate-totp", "immediate-otp"] as const).flatMap(
 			(method) => [true, false].map((veto) => ({ method, veto })),
 		),
-	)("rejects $method activation when its database hook vetoes or rewrites it: $veto", async ({
-		method,
-		veto,
-	}) => {
-		const enabled = vi.fn();
-		let code = "";
-		const immediate = method.startsWith("immediate-");
-		const { auth, db, client, signInWithTestUser, testUser } =
-			await getTestInstance(
-				{
-					databaseHooks: {
-						user: {
-							update: {
-								before: async (data) =>
-									data.twoFactorEnabled === true
-										? veto
-											? false
-											: { data: { ...data, twoFactorEnabled: false } }
-										: undefined,
-							},
-						},
-					},
-					plugins: [
-						twoFactor({
-							onTotpEnabled: enabled,
-							skipVerificationOnEnable: immediate,
-							otpOptions: {
-								sendOTP: async ({ otp }) => {
-									code = otp;
+	)(
+		"rejects $method activation when its database hook vetoes or rewrites it: $veto",
+		async ({ method, veto }) => {
+			const enabled = vi.fn();
+			let code = "";
+			const immediate = method.startsWith("immediate-");
+			const { auth, db, client, signInWithTestUser, testUser } =
+				await getTestInstance(
+					{
+						databaseHooks: {
+							user: {
+								update: {
+									before: async (data) =>
+										data.twoFactorEnabled === true
+											? veto
+												? false
+												: { data: { ...data, twoFactorEnabled: false } }
+											: undefined,
 								},
 							},
-						}),
-					],
+						},
+						plugins: [
+							twoFactor({
+								onTotpEnabled: enabled,
+								skipVerificationOnEnable: immediate,
+								otpOptions: {
+									sendOTP: async ({ otp }) => {
+										code = otp;
+									},
+								},
+							}),
+						],
+					},
+					{ clientOptions: { plugins: [twoFactorClient()] } },
+				);
+			const { headers, user } = await signInWithTestUser();
+			const before = await auth.api.getSession({ headers });
+			const enrollment = await client.twoFactor.enable(
+				{
+					password: testUser.password,
+					method: method === "immediate-otp" ? "otp" : "totp",
 				},
-				{ clientOptions: { plugins: [twoFactorClient()] } },
+				{ headers },
 			);
-		const { headers, user } = await signInWithTestUser();
-		const before = await auth.api.getSession({ headers });
-		const enrollment = await client.twoFactor.enable(
-			{
-				password: testUser.password,
-				method: method === "immediate-otp" ? "otp" : "totp",
-			},
-			{ headers },
-		);
-		if (immediate) {
-			expect(enrollment.error?.code).toBe("FAILED_TO_UPDATE_USER");
-		} else if (method === "otp") {
-			await client.twoFactor.sendOtp({}, { headers });
+			if (immediate) {
+				expect(enrollment.error?.code).toBe("FAILED_TO_UPDATE_USER");
+			} else if (method === "otp") {
+				await client.twoFactor.sendOtp({}, { headers });
+				expect(
+					(await client.twoFactor.verifyOtp({ code }, { headers })).error?.code,
+				).toBe("FAILED_TO_UPDATE_USER");
+			} else {
+				const row = await db.findOne<{ secret: string }>({
+					model: "twoFactor",
+					where: [{ field: "userId", value: user.id }],
+				});
+				const secret = await symmetricDecrypt({
+					key: (await auth.$context).secretConfig,
+					data: row!.secret,
+				});
+				expect(
+					(
+						await client.twoFactor.verifyTotp(
+							{ code: await createOTP(secret).totp() },
+							{ headers },
+						)
+					).error?.code,
+				).toBe("FAILED_TO_UPDATE_USER");
+			}
+			expect(enabled).not.toHaveBeenCalled();
+			expect((await auth.api.getSession({ headers }))?.session.token).toBe(
+				before?.session.token,
+			);
 			expect(
-				(await client.twoFactor.verifyOtp({ code }, { headers })).error?.code,
-			).toBe("FAILED_TO_UPDATE_USER");
-		} else {
-			const row = await db.findOne<{ secret: string }>({
-				model: "twoFactor",
-				where: [{ field: "userId", value: user.id }],
-			});
-			const secret = await symmetricDecrypt({
-				key: (await auth.$context).secretConfig,
-				data: row!.secret,
-			});
+				await db.findOne({
+					model: "user",
+					where: [{ field: "id", value: user.id }],
+				}),
+			).toMatchObject({ twoFactorEnabled: false });
+		},
+	);
+
+	it.each([true, false])(
+		"retains the factor when disabling is vetoed or rewritten by a database hook: %s",
+		async (veto) => {
+			const disabled = vi.fn();
+			let block = false;
+			const { auth, db, client, testUser, signInWithTestUser, sessionSetter } =
+				await getTestInstance(
+					{
+						databaseHooks: {
+							user: {
+								update: {
+									before: async (data) => {
+										if (block && data.twoFactorEnabled === false)
+											return veto
+												? false
+												: { data: { ...data, twoFactorEnabled: true } };
+									},
+								},
+							},
+						},
+						plugins: [
+							twoFactor({
+								skipVerificationOnEnable: true,
+								onTotpDisabled: disabled,
+							}),
+						],
+					},
+					{ clientOptions: { plugins: [twoFactorClient()] } },
+				);
+			const { headers, user } = await signInWithTestUser();
 			expect(
 				(
-					await client.twoFactor.verifyTotp(
-						{ code: await createOTP(secret).totp() },
+					await client.twoFactor.enable(
+						{ password: testUser.password, method: "totp" },
+						{ headers, onSuccess: sessionSetter(headers) },
+					)
+				).error,
+			).toBeNull();
+			const before = await auth.api.getSession({ headers });
+			block = true;
+			expect(
+				(
+					await client.twoFactor.disable(
+						{ password: testUser.password },
 						{ headers },
 					)
 				).error?.code,
 			).toBe("FAILED_TO_UPDATE_USER");
-		}
-		expect(enabled).not.toHaveBeenCalled();
-		expect((await auth.api.getSession({ headers }))?.session.token).toBe(
-			before?.session.token,
-		);
-		expect(
-			await db.findOne({
-				model: "user",
-				where: [{ field: "id", value: user.id }],
-			}),
-		).toMatchObject({ twoFactorEnabled: false });
-	});
+			expect(disabled).not.toHaveBeenCalled();
+			expect((await auth.api.getSession({ headers }))?.session.token).toBe(
+				before?.session.token,
+			);
+			expect(
+				await db.findOne({
+					model: "user",
+					where: [{ field: "id", value: user.id }],
+				}),
+			).toMatchObject({ twoFactorEnabled: true });
+			expect(
+				await db.findOne({
+					model: "twoFactor",
+					where: [{ field: "userId", value: user.id }],
+				}),
+			).not.toBeNull();
+		},
+	);
 
-	it.each([
-		true,
-		false,
-	])("retains the factor when disabling is vetoed or rewritten by a database hook: %s", async (veto) => {
-		const disabled = vi.fn();
-		let block = false;
-		const { auth, db, client, testUser, signInWithTestUser, sessionSetter } =
-			await getTestInstance(
+	it.each(["totp", "otp"] as const)(
+		"emits immediate %s activation with the updated user",
+		async (method) => {
+			const enabled = vi.fn();
+			const { client, signInWithTestUser, testUser } = await getTestInstance(
 				{
-					databaseHooks: {
-						user: {
-							update: {
-								before: async (data) => {
-									if (block && data.twoFactorEnabled === false)
-										return veto
-											? false
-											: { data: { ...data, twoFactorEnabled: true } };
-								},
-							},
-						},
-					},
 					plugins: [
 						twoFactor({
+							onTotpEnabled: enabled,
 							skipVerificationOnEnable: true,
-							onTotpDisabled: disabled,
+							otpOptions: { sendOTP: async () => {} },
 						}),
 					],
 				},
 				{ clientOptions: { plugins: [twoFactorClient()] } },
 			);
-		const { headers, user } = await signInWithTestUser();
-		expect(
-			(
-				await client.twoFactor.enable(
-					{ password: testUser.password, method: "totp" },
-					{ headers, onSuccess: sessionSetter(headers) },
-				)
-			).error,
-		).toBeNull();
-		const before = await auth.api.getSession({ headers });
-		block = true;
-		expect(
-			(
-				await client.twoFactor.disable(
-					{ password: testUser.password },
-					{ headers },
-				)
-			).error?.code,
-		).toBe("FAILED_TO_UPDATE_USER");
-		expect(disabled).not.toHaveBeenCalled();
-		expect((await auth.api.getSession({ headers }))?.session.token).toBe(
-			before?.session.token,
-		);
-		expect(
-			await db.findOne({
-				model: "user",
-				where: [{ field: "id", value: user.id }],
-			}),
-		).toMatchObject({ twoFactorEnabled: true });
-		expect(
-			await db.findOne({
-				model: "twoFactor",
-				where: [{ field: "userId", value: user.id }],
-			}),
-		).not.toBeNull();
-	});
-
-	it.each([
-		"totp",
-		"otp",
-	] as const)("emits immediate %s activation with the updated user", async (method) => {
-		const enabled = vi.fn();
-		const { client, signInWithTestUser, testUser } = await getTestInstance(
-			{
-				plugins: [
-					twoFactor({
-						onTotpEnabled: enabled,
-						skipVerificationOnEnable: true,
-						otpOptions: { sendOTP: async () => {} },
-					}),
-				],
-			},
-			{ clientOptions: { plugins: [twoFactorClient()] } },
-		);
-		const { headers } = await signInWithTestUser();
-		expect(
-			(
-				await client.twoFactor.enable(
-					{ password: testUser.password, method },
-					{ headers },
-				)
-			).error,
-		).toBeNull();
-		expect(enabled).toHaveBeenCalledOnce();
-		expect(enabled.mock.calls[0]?.[0]).toMatchObject({
-			user: { twoFactorEnabled: true },
-		});
-	});
+			const { headers } = await signInWithTestUser();
+			expect(
+				(
+					await client.twoFactor.enable(
+						{ password: testUser.password, method },
+						{ headers },
+					)
+				).error,
+			).toBeNull();
+			expect(enabled).toHaveBeenCalledOnce();
+			expect(enabled.mock.calls[0]?.[0]).toMatchObject({
+				user: { twoFactorEnabled: true },
+			});
+		},
+	);
 
 	it("does not announce activation when signing into a legacy verified TOTP account", async () => {
 		const enabled = vi.fn();
@@ -697,65 +697,65 @@ describe("authentication lifecycle completion", () => {
 		});
 	});
 
-	it.each([
-		false,
-		true,
-	])("finalizes only after the outer hooks when nested dispatch rewrites cookies: %s", async (reject) => {
-		const events: string[] = [];
-		const inner = createAuthEndpoint(
-			"/lifecycle-inner",
-			{ method: "GET" },
-			async (ctx) => {
-				const inherited = ctx.context.newSession!;
-				await setSessionCookie(ctx, {
-					session: inherited.session,
-					user: inherited.user,
-				});
-				events.push("inner");
-				return ctx.json({ ok: true });
-			},
-		);
-		const { auth, testUser } = await getTestInstance({
-			onLogin: async () => {
-				events.push("login");
-			},
-			plugins: [
-				{
-					id: "lifecycle-nesting",
-					hooks: {
-						after: [
-							{
-								matcher: (ctx) => ctx.path === "/sign-in/email",
-								handler: createAuthMiddleware(async (ctx) => {
-									await dispatchAuthEndpoint(inner, {
-										context: ctx.context,
-										headers: ctx.headers,
-										asResponse: false,
-									});
-								}),
-							},
-							{
-								matcher: (ctx) => ctx.path === "/sign-in/email",
-								handler: createAuthMiddleware(async () => {
-									events.push("last");
-									if (reject) throw APIError.fromStatus("FORBIDDEN");
-								}),
-							},
-						],
-					},
+	it.each([false, true])(
+		"finalizes only after the outer hooks when nested dispatch rewrites cookies: %s",
+		async (reject) => {
+			const events: string[] = [];
+			const inner = createAuthEndpoint(
+				"/lifecycle-inner",
+				{ method: "GET" },
+				async (ctx) => {
+					const inherited = ctx.context.newSession!;
+					await setSessionCookie(ctx, {
+						session: inherited.session,
+						user: inherited.user,
+					});
+					events.push("inner");
+					return ctx.json({ ok: true });
 				},
-			],
-		});
-		events.length = 0;
-		const response = await auth.api.signInEmail({
-			body: testUser,
-			asResponse: true,
-		});
-		expect(response.status).toBe(reject ? 403 : 200);
-		expect(events).toEqual(
-			reject ? ["inner", "last"] : ["inner", "last", "login"],
-		);
-	});
+			);
+			const { auth, testUser } = await getTestInstance({
+				onLogin: async () => {
+					events.push("login");
+				},
+				plugins: [
+					{
+						id: "lifecycle-nesting",
+						hooks: {
+							after: [
+								{
+									matcher: (ctx) => ctx.path === "/sign-in/email",
+									handler: createAuthMiddleware(async (ctx) => {
+										await dispatchAuthEndpoint(inner, {
+											context: ctx.context,
+											headers: ctx.headers,
+											asResponse: false,
+										});
+									}),
+								},
+								{
+									matcher: (ctx) => ctx.path === "/sign-in/email",
+									handler: createAuthMiddleware(async () => {
+										events.push("last");
+										if (reject) throw APIError.fromStatus("FORBIDDEN");
+									}),
+								},
+							],
+						},
+					},
+				],
+			});
+			events.length = 0;
+			const response = await auth.api.signInEmail({
+				body: testUser,
+				asResponse: true,
+			});
+			expect(response.status).toBe(reject ? 403 : 200);
+			expect(events).toEqual(
+				reject ? ["inner", "last"] : ["inner", "last", "login"],
+			);
+		},
+	);
 
 	it("does not emit login for a Response rejected by an after hook", async () => {
 		const login = vi.fn();
@@ -911,48 +911,47 @@ describe("authentication lifecycle completion", () => {
 		expect((await client.signIn.email(testUser)).error?.status).toBe(401);
 	});
 
-	it.each([
-		"sign-up",
-		"sign-in",
-		"change-email",
-	] as const)("emits verification-requested for %s delivery", async (path) => {
-		const requested = vi.fn();
-		const { auth, client, testUser, signInWithTestUser } =
-			await getTestInstance({
-				emailAndPassword: {
-					enabled: true,
-					requireEmailVerification: path === "sign-in",
-				},
-				emailVerification: {
-					sendOnSignUp: path === "sign-up",
-					sendOnSignIn: true,
-					sendVerificationEmail: async () => {},
-					onEmailVerificationRequested: requested,
-				},
-				user: { changeEmail: { enabled: true } },
-			});
-		if (path === "sign-up") {
-			expect(requested).toHaveBeenCalledOnce();
-		} else if (path === "sign-in") {
-			requested.mockClear();
-			await expect(
-				auth.api.signInEmail({ body: testUser }),
-			).rejects.toMatchObject({ status: "FORBIDDEN" });
-			expect(requested).toHaveBeenCalledOnce();
-		} else {
-			const { headers } = await signInWithTestUser();
-			requested.mockClear();
-			expect(
-				(
-					await client.changeEmail(
-						{ newEmail: "changed@example.com" },
-						{ headers },
-					)
-				).error,
-			).toBeNull();
-			expect(requested).toHaveBeenCalledOnce();
-		}
-	});
+	it.each(["sign-up", "sign-in", "change-email"] as const)(
+		"emits verification-requested for %s delivery",
+		async (path) => {
+			const requested = vi.fn();
+			const { auth, client, testUser, signInWithTestUser } =
+				await getTestInstance({
+					emailAndPassword: {
+						enabled: true,
+						requireEmailVerification: path === "sign-in",
+					},
+					emailVerification: {
+						sendOnSignUp: path === "sign-up",
+						sendOnSignIn: true,
+						sendVerificationEmail: async () => {},
+						onEmailVerificationRequested: requested,
+					},
+					user: { changeEmail: { enabled: true } },
+				});
+			if (path === "sign-up") {
+				expect(requested).toHaveBeenCalledOnce();
+			} else if (path === "sign-in") {
+				requested.mockClear();
+				await expect(
+					auth.api.signInEmail({ body: testUser }),
+				).rejects.toMatchObject({ status: "FORBIDDEN" });
+				expect(requested).toHaveBeenCalledOnce();
+			} else {
+				const { headers } = await signInWithTestUser();
+				requested.mockClear();
+				expect(
+					(
+						await client.changeEmail(
+							{ newEmail: "changed@example.com" },
+							{ headers },
+						)
+					).error,
+				).toBeNull();
+				expect(requested).toHaveBeenCalledOnce();
+			}
+		},
+	);
 });
 
 /** @see https://github.com/better-auth/better-auth/pull/8915 */

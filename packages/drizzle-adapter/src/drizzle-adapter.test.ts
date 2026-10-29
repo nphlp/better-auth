@@ -728,9 +728,7 @@ describe("drizzle-adapter", () => {
 			expect(predicate).toContainEqual({ value: [" and "] });
 			expect(predicate).not.toContainEqual({ value: [" or "] });
 			const compiled = new SQLiteSyncDialect().sqlToQuery(updateGuard as SQL);
-			expect(compiled.sql).toContain(
-				'"user"."id" in (select id from user)',
-			);
+			expect(compiled.sql).toContain('"user"."id" in (select id from user)');
 			expect(compiled.sql).toContain('"user"."attempts" > ?');
 			expect(compiled.params).toEqual([0]);
 		});

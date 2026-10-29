@@ -1040,7 +1040,6 @@ it("preserves the HTTP body for verification sender and lifecycle on One Tap", a
 	}
 });
 
-
 describe("oneTapClient plugin-level options", async () => {
 	const initialize = vi.fn();
 	const renderButton = vi.fn();

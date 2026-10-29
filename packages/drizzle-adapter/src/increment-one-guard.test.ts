@@ -53,10 +53,15 @@ describe.each([
 		expect(queries).toHaveLength(1);
 		const query = queries[0]!;
 		expect(query).toContain('"user"."id" in (select');
+		const singleRowSelection = /"user"\."id" in \(select[\s\S]*? limit \$\d+\)/;
+		expect(query).toMatch(singleRowSelection);
 		const outerGuard = query
-			.split(/ limit \$\d+\)/)[1]
+			.replace(singleRowSelection, "single_row_selection")
+			.split(" where ")[1]
 			?.split(" returning ")[0];
 		expect(outerGuard).toBeDefined();
+		expect(outerGuard).toContain("single_row_selection");
+		expect(outerGuard).not.toContain(" or ");
 		for (const field of ["email", "pendingEmail", "pendingEmailRequestId"]) {
 			expect(outerGuard).toContain(`"user"."${field}" =`);
 		}

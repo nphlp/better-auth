@@ -40,6 +40,8 @@ This is the Better Auth repository - a comprehensive authentication framework fo
 - Magic-link callback query values are already decoded by the HTTP query parser. Validate and
   redirect using that same value without another `decodeURIComponent`, preserving encoded query
   delimiters and fragments. Cover ordinary, new-user and error redirects through `auth.handler`.
+- Change-email verification failures preserve the callback query and fragment, placing the error
+  parameter in the query string before the fragment. Cover relative and absolute callbacks.
 
 ```ts
 const params = new URLSearchParams({ error });
@@ -91,7 +93,7 @@ When a flow must synthesize an email, use `createPlaceholderEmail` with a stable
 - Ensure `pnpm typecheck` passes before finishing
 - DO NOT COMMIT unless the user explicitly asks
 - Conventional Commits: `feat(scope):`, `fix(scope):`, `docs:`, `chore:`. Use `!` for breaking changes (e.g. `feat(auth)!:`)
-- PRs target `main`
+- Downstream maintenance uses the branch policy below
 
 ## No-account password reset invitations
 
@@ -138,3 +140,42 @@ hook vetoes fail the operation and roll back. A missing user fails closed. The a
 require transaction support; legacy nontransactional consumers retain their previous behavior
 without a cross-process concurrency guarantee. Test the actual PostgreSQL race at the consumer
 boundary in addition to SQLite hook/rollback tests. No schema column is added.
+
+## Downstream fork maintenance
+
+This fork is maintained on `fork/nextjs-deploy`, starting from the complete
+`merge/nextjs-deploy` aggregate. Its current upstream base is stable v1.7.14.
+Upstream PRs #8915, #8916 and #9561 are closed by the owner's decision. Their
+links remain historical references, not work queues or a publication requirement.
+Keep delivered source revisions recoverable before rewriting maintenance history.
+
+Preserve lifecycle callbacks, atomic email changes, passwordless onboarding,
+serialized credential writes, hashed verification lookup, trusted-device factor
+generations, completed login methods and passkey freshness/verification policy.
+The reset helper keeps upstream atomic token consumption and session revocation
+in the same transaction as the fork's serialized credential write. The explicit
+magic-link signup profile remains validated within a purpose-specific record.
+
+Upstream purpose-prefixed Magic Link and OAuth/SAML state records are mandatory.
+Previously issued links and pending sign-ins must be restarted on upgrade.
+Do not add an unprefixed fallback to make old links redeemable. Existing account
+and user data do not require a migration for this token namespace change.
+
+Use the native pnpm lockfile and build all ten packages declared by the product
+builder before validating compiled exports. The Zod catalogue requires ^4.6.7.
+Keep the full source audit visible, including documentation and test workspaces.
+A dependency check of the delivered packages has its own explicit coverage and
+must not be presented as a clean audit of the entire upstream monorepo.
+
+PostgreSQL auth tests use BETTER_AUTH_TEST_POSTGRES_URL pointing to an isolated
+test server. The db and OAuth-proxy cases are disabled when it is absent rather
+than probing a development server. Legacy migration-provider files that probe
+fixed PostgreSQL/MySQL endpoints require a separate isolated setup and are not
+part of the source unit selection used for this upgrade.
+
+Normal product installation consumes the committed prebuilt aggregate, not this
+source checkout. Publish a verified source revision before adopting its gitlink,
+BUILD_INFO.json, package artifacts and consumer lockfiles together. Keep Expo's
+separate native application in standby and preserve the complete server package
+set, including the Expo server integration. Database changes and deployment keep
+their separate owner approvals.

@@ -2548,49 +2548,49 @@ describe("internal adapter test", async () => {
 
 /** @see https://github.com/better-auth/better-auth/pull/8916 */
 describe("guarded user updates", () => {
-	it.each([
-		"mismatch",
-		"veto",
-	] as const)("leaves hooks and cached sessions unchanged after %s", async (failure) => {
-		const store = new Map<string, string>();
-		const after = vi.fn();
-		const before = vi.fn(async () =>
-			failure === "veto" ? (false as const) : undefined,
-		);
-		const options = {
-			database: new DatabaseSync(":memory:"),
-			secondaryStorage: createStringSecondaryStorage(store),
-			databaseHooks: { user: { update: { before, after } } },
-		} satisfies BetterAuthOptions;
-		await (await getMigrations(options)).runMigrations();
-		const { internalAdapter, adapter } = await init(options);
-		const user = await internalAdapter.createUser(
-			{ name: "Original", email: "guard@example.com" },
-			{ method: "test" },
-		);
-		await internalAdapter.createSession(user.id);
-		const snapshot = new Map(store);
-		const updated = await internalAdapter.updateUserIf(
-			user.id,
-			{ name: "Rejected" },
-			[
-				{
-					field: "email",
-					value: failure === "mismatch" ? "wrong@example.com" : user.email,
-				},
-			],
-		);
-		expect(updated).toBeNull();
-		expect(before).toHaveBeenCalledOnce();
-		expect(after).not.toHaveBeenCalled();
-		expect(store).toEqual(snapshot);
-		expect(
-			await adapter.findOne({
-				model: "user",
-				where: [{ field: "id", value: user.id }],
-			}),
-		).toMatchObject({ name: "Original" });
-	});
+	it.each(["mismatch", "veto"] as const)(
+		"leaves hooks and cached sessions unchanged after %s",
+		async (failure) => {
+			const store = new Map<string, string>();
+			const after = vi.fn();
+			const before = vi.fn(async () =>
+				failure === "veto" ? (false as const) : undefined,
+			);
+			const options = {
+				database: new DatabaseSync(":memory:"),
+				secondaryStorage: createStringSecondaryStorage(store),
+				databaseHooks: { user: { update: { before, after } } },
+			} satisfies BetterAuthOptions;
+			await (await getMigrations(options)).runMigrations();
+			const { internalAdapter, adapter } = await init(options);
+			const user = await internalAdapter.createUser(
+				{ name: "Original", email: "guard@example.com" },
+				{ method: "test" },
+			);
+			await internalAdapter.createSession(user.id);
+			const snapshot = new Map(store);
+			const updated = await internalAdapter.updateUserIf(
+				user.id,
+				{ name: "Rejected" },
+				[
+					{
+						field: "email",
+						value: failure === "mismatch" ? "wrong@example.com" : user.email,
+					},
+				],
+			);
+			expect(updated).toBeNull();
+			expect(before).toHaveBeenCalledOnce();
+			expect(after).not.toHaveBeenCalled();
+			expect(store).toEqual(snapshot);
+			expect(
+				await adapter.findOne({
+					model: "user",
+					where: [{ field: "id", value: user.id }],
+				}),
+			).toMatchObject({ name: "Original" });
+		},
+	);
 
 	it("applies hook transformations and refreshes renamed fields only after commit", async () => {
 		const store = new Map<string, string>();

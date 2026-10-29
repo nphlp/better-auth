@@ -538,54 +538,54 @@ describe("forgot password", async () => {
 /**
  * @see https://github.com/better-auth/better-auth/pull/9561
  */
-it.each([
-	false,
-	true,
-])("should mask synchronous no-account callback errors with background tasks %s", async (background) => {
-	const tasks: Promise<unknown>[] = [];
-	const statuses: number[] = [];
-	const sendNoAccount = vi.fn(() => {
-		throw new Error("Email SDK rejected its configuration");
-	});
-	const { client, testUser } = await getTestInstance({
-		emailAndPassword: {
-			enabled: true,
-			async sendResetPassword() {},
-			sendResetPasswordNoAccount: sendNoAccount,
-		},
-		advanced: {
-			backgroundTasks: background
-				? {
-						handler: (task) => {
-							tasks.push(task);
-						},
-					}
-				: undefined,
-		},
-	});
-	const existing = await client.requestPasswordReset({
-		email: testUser.email,
-		fetchOptions: {
-			onResponse: ({ response }) => {
-				statuses.push(response.status);
+it.each([false, true])(
+	"should mask synchronous no-account callback errors with background tasks %s",
+	async (background) => {
+		const tasks: Promise<unknown>[] = [];
+		const statuses: number[] = [];
+		const sendNoAccount = vi.fn(() => {
+			throw new Error("Email SDK rejected its configuration");
+		});
+		const { client, testUser } = await getTestInstance({
+			emailAndPassword: {
+				enabled: true,
+				async sendResetPassword() {},
+				sendResetPasswordNoAccount: sendNoAccount,
 			},
-		},
-	});
-	const unknown = await client.requestPasswordReset({
-		email: "unknown@example.com",
-		fetchOptions: {
-			onResponse: ({ response }) => {
-				statuses.push(response.status);
+			advanced: {
+				backgroundTasks: background
+					? {
+							handler: (task) => {
+								tasks.push(task);
+							},
+						}
+					: undefined,
 			},
-		},
-	});
-	await Promise.all(tasks);
-	expect(sendNoAccount).toHaveBeenCalledTimes(1);
-	expect(statuses).toEqual([200, 200]);
-	expect(existing.data?.status).toBe(true);
-	expect(unknown.error).toBeNull();
-	expect(unknown.data).toEqual(existing.data);
-});
+		});
+		const existing = await client.requestPasswordReset({
+			email: testUser.email,
+			fetchOptions: {
+				onResponse: ({ response }) => {
+					statuses.push(response.status);
+				},
+			},
+		});
+		const unknown = await client.requestPasswordReset({
+			email: "unknown@example.com",
+			fetchOptions: {
+				onResponse: ({ response }) => {
+					statuses.push(response.status);
+				},
+			},
+		});
+		await Promise.all(tasks);
+		expect(sendNoAccount).toHaveBeenCalledTimes(1);
+		expect(statuses).toEqual([200, 200]);
+		expect(existing.data?.status).toBe(true);
+		expect(unknown.error).toBeNull();
+		expect(unknown.data).toEqual(existing.data);
+	},
+);
 
 describe("revoke sessions on password reset", async () => {
 	const mockSendEmail = vi.fn();
@@ -957,3 +957,75 @@ describe("verify password length", async () => {
 		expect(verify).not.toHaveBeenCalled();
 	});
 });
+
+/** @see https://github.com/better-auth/better-auth/releases/tag/v1.7.14 */
+it.each(
+	process.env.BETTER_AUTH_TEST_POSTGRES_URL
+		? (["sqlite", "postgres"] as const)
+		: (["sqlite"] as const),
+)(
+	"rolls back reset consumption and session revocation when the credential hook vetoes the write (%s)",
+	async (testWith) => {
+		let token = "";
+		let veto = false;
+		const { auth, client, testUser, signInWithTestUser } =
+			await getTestInstance(
+				{
+					verification: { storeIdentifier: "hashed" },
+					emailAndPassword: {
+						enabled: true,
+						revokeSessionsOnPasswordReset: true,
+						sendResetPassword: async (data) => {
+							token = data.token;
+						},
+					},
+					databaseHooks: {
+						account: {
+							update: { before: async () => (veto ? false : undefined) },
+						},
+					},
+				},
+				{
+					transaction: true,
+					testWith,
+					postgresURL: process.env.BETTER_AUTH_TEST_POSTGRES_URL,
+				},
+			);
+		const { headers } = await signInWithTestUser();
+		await client.requestPasswordReset({ email: testUser.email });
+		expect(token).not.toBe("");
+		const context = await auth.$context;
+		veto = true;
+		const rejected = await client.resetPassword({
+			token,
+			newPassword: "new-reset-password",
+		});
+		expect(rejected.error).not.toBeNull();
+		expect(
+			await context.internalAdapter.findVerificationValue(
+				`reset-password:${token}`,
+			),
+		).not.toBeNull();
+		expect(await auth.api.getSession({ headers })).not.toBeNull();
+		veto = false;
+		const retried = await client.resetPassword({
+			token,
+			newPassword: "new-reset-password",
+		});
+		expect(retried.error).toBeNull();
+		expect(retried.data?.status).toBe(true);
+		expect(
+			await context.internalAdapter.findVerificationValue(
+				`reset-password:${token}`,
+			),
+		).toBeNull();
+		expect(await auth.api.getSession({ headers })).toBeNull();
+		const oldPassword = await client.signIn.email(testUser);
+		expect(oldPassword.error).not.toBeNull();
+		const newPassword = await client.signIn.email({
+			email: testUser.email,
+			password: "new-reset-password",
+		});
+		expect(newPassword.error).toBeNull();
+	},
+);

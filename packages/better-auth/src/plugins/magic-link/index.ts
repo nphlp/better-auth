@@ -184,10 +184,13 @@ const magicLinkRecordSchema = z
 		type: z.literal("magic-link"),
 		email: z.email(),
 		name: z.string().optional(),
-		signUp: z.object({
-			name: z.string(),
-			additionalFields: z.record(z.string(), z.unknown()),
-		}).strict().optional(),
+		signUp: z
+			.object({
+				name: z.string(),
+				additionalFields: z.record(z.string(), z.unknown()),
+			})
+			.strict()
+			.optional(),
 	})
 	.strict();
 function parseMagicLinkRecord(value: string) {
@@ -301,7 +304,7 @@ export const magicLink = (options: MagicLinkOptions) => {
 							type: "magic-link",
 							email,
 							name: ctx.body.name,
-							 signUp,
+							signUp,
 						}),
 						expiresAt: new Date(Date.now() + (opts.expiresIn || 60 * 5) * 1000),
 					});

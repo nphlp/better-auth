@@ -57,126 +57,126 @@ describe("verification-table email change concurrency", () => {
 		expect(stored).toMatchObject({ email: user.email, pendingEmail: null });
 	});
 
-	it.each([
-		"race@example.com",
-		"newer@example.com",
-	])("rejects an in-flight verification superseded by a request to %s", async (newEmail) => {
-		const entered = Promise.withResolvers<void>();
-		const resume = Promise.withResolvers<void>();
-		const urls: string[] = [];
-		const completed = vi.fn();
-		let paused = false;
-		const { auth, client, db, signInWithTestUser } = await getTestInstance({
-			user: {
-				changeEmail: {
-					enabled: true,
-					strategy: "verification-table",
-					sendVerificationEmail: async ({ url }) => {
-						urls.push(url);
-					},
-					onChangeEmailCompleted: completed,
-				},
-			},
-			databaseHooks: {
+	it.each(["race@example.com", "newer@example.com"])(
+		"rejects an in-flight verification superseded by a request to %s",
+		async (newEmail) => {
+			const entered = Promise.withResolvers<void>();
+			const resume = Promise.withResolvers<void>();
+			const urls: string[] = [];
+			const completed = vi.fn();
+			let paused = false;
+			const { auth, client, db, signInWithTestUser } = await getTestInstance({
 				user: {
-					update: {
-						before: async (data) => {
-							if (data.email === "race@example.com" && !paused) {
-								paused = true;
+					changeEmail: {
+						enabled: true,
+						strategy: "verification-table",
+						sendVerificationEmail: async ({ url }) => {
+							urls.push(url);
+						},
+						onChangeEmailCompleted: completed,
+					},
+				},
+				databaseHooks: {
+					user: {
+						update: {
+							before: async (data) => {
+								if (data.email === "race@example.com" && !paused) {
+									paused = true;
+									entered.resolve();
+									await resume.promise;
+								}
+							},
+						},
+					},
+				},
+			});
+			const { headers, user } = await signInWithTestUser();
+			await client.changeEmail({ newEmail: "race@example.com" }, { headers });
+			const first = auth.handler(new Request(urls[0]!, { headers }));
+			await entered.promise;
+			try {
+				expect(
+					(await client.changeEmail({ newEmail }, { headers })).data?.status,
+				).toBe(true);
+			} finally {
+				resume.resolve();
+			}
+			expect((await first).headers.get("location")).toContain(
+				"error=INVALID_TOKEN",
+			);
+			expect(completed).not.toHaveBeenCalled();
+			expect(
+				await db.findOne({
+					model: "user",
+					where: [{ field: "id", value: user.id }],
+				}),
+			).toMatchObject({ email: user.email, pendingEmail: newEmail });
+			expect(
+				(await auth.handler(new Request(urls[1]!, { headers }))).headers.get(
+					"location",
+				),
+			).toBe("/");
+			expect(completed).toHaveBeenCalledOnce();
+			expect(
+				await db.findOne({
+					model: "user",
+					where: [{ field: "id", value: user.id }],
+				}),
+			).toMatchObject({ email: newEmail, pendingEmail: null });
+		},
+	);
+
+	it.each(["first@example.com", "second@example.com"])(
+		"does not clear a newer request to %s when an older email send fails",
+		async (newEmail) => {
+			const entered = Promise.withResolvers<void>();
+			const resume = Promise.withResolvers<void>();
+			const urls: string[] = [];
+			const { auth, client, db, signInWithTestUser } = await getTestInstance({
+				user: {
+					changeEmail: {
+						enabled: true,
+						strategy: "verification-table",
+						sendVerificationEmail: async ({ url }) => {
+							urls.push(url);
+							if (urls.length === 1) {
 								entered.resolve();
 								await resume.promise;
+								throw new Error("first delivery failed");
 							}
 						},
 					},
 				},
-			},
-		});
-		const { headers, user } = await signInWithTestUser();
-		await client.changeEmail({ newEmail: "race@example.com" }, { headers });
-		const first = auth.handler(new Request(urls[0]!, { headers }));
-		await entered.promise;
-		try {
+			});
+			const { headers, user } = await signInWithTestUser();
+			const first = client.changeEmail(
+				{ newEmail: "first@example.com" },
+				{ headers },
+			);
+			await entered.promise;
+			try {
+				expect(
+					(await client.changeEmail({ newEmail }, { headers })).data?.status,
+				).toBe(true);
+			} finally {
+				resume.resolve();
+			}
+			await first;
+			const stored = await db.findOne<{ pendingEmail: string | null }>({
+				model: "user",
+				where: [{ field: "id", value: user.id }],
+			});
+			expect(stored?.pendingEmail).toBe(newEmail);
+			const response = await auth.handler(new Request(urls[1]!, { headers }));
+			expect(response.headers.get("location")).not.toContain("error=");
 			expect(
-				(await client.changeEmail({ newEmail }, { headers })).data?.status,
-			).toBe(true);
-		} finally {
-			resume.resolve();
-		}
-		expect((await first).headers.get("location")).toContain(
-			"error=INVALID_TOKEN",
-		);
-		expect(completed).not.toHaveBeenCalled();
-		expect(
-			await db.findOne({
-				model: "user",
-				where: [{ field: "id", value: user.id }],
-			}),
-		).toMatchObject({ email: user.email, pendingEmail: newEmail });
-		expect(
-			(await auth.handler(new Request(urls[1]!, { headers }))).headers.get(
-				"location",
-			),
-		).toBe("/");
-		expect(completed).toHaveBeenCalledOnce();
-		expect(
-			await db.findOne({
-				model: "user",
-				where: [{ field: "id", value: user.id }],
-			}),
-		).toMatchObject({ email: newEmail, pendingEmail: null });
-	});
-
-	it.each([
-		"first@example.com",
-		"second@example.com",
-	])("does not clear a newer request to %s when an older email send fails", async (newEmail) => {
-		const entered = Promise.withResolvers<void>();
-		const resume = Promise.withResolvers<void>();
-		const urls: string[] = [];
-		const { auth, client, db, signInWithTestUser } = await getTestInstance({
-			user: {
-				changeEmail: {
-					enabled: true,
-					strategy: "verification-table",
-					sendVerificationEmail: async ({ url }) => {
-						urls.push(url);
-						if (urls.length === 1) {
-							entered.resolve();
-							await resume.promise;
-							throw new Error("first delivery failed");
-						}
-					},
-				},
-			},
-		});
-		const { headers, user } = await signInWithTestUser();
-		const first = client.changeEmail(
-			{ newEmail: "first@example.com" },
-			{ headers },
-		);
-		await entered.promise;
-		try {
-			expect(
-				(await client.changeEmail({ newEmail }, { headers })).data?.status,
-			).toBe(true);
-		} finally {
-			resume.resolve();
-		}
-		await first;
-		const stored = await db.findOne<{ pendingEmail: string | null }>({
-			model: "user",
-			where: [{ field: "id", value: user.id }],
-		});
-		expect(stored?.pendingEmail).toBe(newEmail);
-		const response = await auth.handler(new Request(urls[1]!, { headers }));
-		expect(response.headers.get("location")).not.toContain("error=");
-		expect(
-			await db.findOne({
-				model: "user",
-				where: [{ field: "id", value: user.id }],
-			}),
-		).toMatchObject({ email: newEmail, pendingEmail: null });
-	});
+				await db.findOne({
+					model: "user",
+					where: [{ field: "id", value: user.id }],
+				}),
+			).toMatchObject({ email: newEmail, pendingEmail: null });
+		},
+	);
 
 	it("does not reactivate an old link after cancellation and a new request to the same address", async () => {
 		const urls: string[] = [];
@@ -384,147 +384,153 @@ describe("verification-table email change concurrency", () => {
 		expect(remainingSessions).toEqual([0]);
 	});
 
-	it.each([
-		"requested",
-		"completed",
-		"cancelled",
-	] as const)("completes email-change security work when the %s callback throws synchronously", async (stage) => {
-		let url = "";
-		const broken = () => {
-			throw new Error("audit unavailable");
-		};
-		const { auth, client, db, signInWithTestUser } = await getTestInstance({
-			user: {
-				changeEmail: {
-					enabled: true,
-					strategy: "verification-table",
-					revokeOtherSessions: true,
-					sendVerificationEmail: async (data) => {
-						url = data.url;
+	it.each(["requested", "completed", "cancelled"] as const)(
+		"completes email-change security work when the %s callback throws synchronously",
+		async (stage) => {
+			let url = "";
+			const broken = () => {
+				throw new Error("audit unavailable");
+			};
+			const { auth, client, db, signInWithTestUser } = await getTestInstance({
+				user: {
+					changeEmail: {
+						enabled: true,
+						strategy: "verification-table",
+						revokeOtherSessions: true,
+						sendVerificationEmail: async (data) => {
+							url = data.url;
+						},
+						onChangeEmailRequested: stage === "requested" ? broken : undefined,
+						onChangeEmailCompleted: stage === "completed" ? broken : undefined,
+						onChangeEmailCancelled: stage === "cancelled" ? broken : undefined,
 					},
-					onChangeEmailRequested: stage === "requested" ? broken : undefined,
-					onChangeEmailCompleted: stage === "completed" ? broken : undefined,
-					onChangeEmailCancelled: stage === "cancelled" ? broken : undefined,
 				},
-			},
-		});
-		const { headers, user } = await signInWithTestUser();
-		expect(
-			(
-				await client.changeEmail(
-					{ newEmail: "callback@example.com" },
-					{ headers },
-				)
-			).error,
-		).toBeNull();
-		if (stage === "cancelled") {
+			});
+			const { headers, user } = await signInWithTestUser();
 			expect(
-				(await client.cancelEmailChange({}, { headers })).error,
+				(
+					await client.changeEmail(
+						{ newEmail: "callback@example.com" },
+						{ headers },
+					)
+				).error,
 			).toBeNull();
-			expect(
-				await db.findOne({
-					model: "user",
-					where: [{ field: "id", value: user.id }],
-				}),
-			).toMatchObject({ email: user.email, pendingEmail: null });
-		} else {
-			const response = await auth.handler(new Request(url));
-			expect(response.status).toBe(302);
-			expect(response.headers.get("location")).toBe("/");
-			expect(
-				await db.count({
-					model: "session",
-					where: [{ field: "userId", value: user.id }],
-				}),
-			).toBe(0);
-		}
-	});
+			if (stage === "cancelled") {
+				expect(
+					(await client.cancelEmailChange({}, { headers })).error,
+				).toBeNull();
+				expect(
+					await db.findOne({
+						model: "user",
+						where: [{ field: "id", value: user.id }],
+					}),
+				).toMatchObject({ email: user.email, pendingEmail: null });
+			} else {
+				const response = await auth.handler(new Request(url));
+				expect(response.status).toBe(302);
+				expect(response.headers.get("location")).toBe("/");
+				expect(
+					await db.count({
+						model: "session",
+						where: [{ field: "userId", value: user.id }],
+					}),
+				).toBe(0);
+			}
+		},
+	);
 
-	it.each([
-		false,
-		true,
-	])("retains an owner's authenticated session or replaces it under revocation: %s", async (revokeOtherSessions) => {
-		let url = "";
-		const { auth, client, signInWithTestUser } = await getTestInstance({
-			user: {
-				changeEmail: {
-					enabled: true,
-					strategy: "verification-table",
-					revokeOtherSessions,
-					sendVerificationEmail: async (data) => {
-						url = data.url;
+	it.each([false, true])(
+		"retains an owner's authenticated session or replaces it under revocation: %s",
+		async (revokeOtherSessions) => {
+			let url = "";
+			const { auth, client, signInWithTestUser } = await getTestInstance({
+				user: {
+					changeEmail: {
+						enabled: true,
+						strategy: "verification-table",
+						revokeOtherSessions,
+						sendVerificationEmail: async (data) => {
+							url = data.url;
+						},
 					},
 				},
-			},
-		});
-		const { headers } = await signInWithTestUser();
-		const other = await signInWithTestUser();
-		const before = await auth.api.getSession({ headers });
-		await client.changeEmail({ newEmail: "session@example.com" }, { headers });
-		const response = await auth.handler(new Request(url, { headers }));
-		expect(response.headers.get("location")).toBe("/");
-		const refreshedHeaders = new Headers({
-			cookie: response.headers
-				.getSetCookie()
-				.map((cookie) => cookie.split(";")[0])
-				.join("; "),
-		});
-		const current = await auth.api.getSession({ headers: refreshedHeaders });
-		expect(current?.user.email).toBe("session@example.com");
-		if (revokeOtherSessions) {
-			expect(current?.session.token).not.toBe(before?.session.token);
-			expect(await auth.api.getSession({ headers })).toBeNull();
-			expect(await auth.api.getSession({ headers: other.headers })).toBeNull();
-		} else {
-			expect(current?.session.token).toBe(before?.session.token);
-			expect(
-				await auth.api.getSession({ headers: other.headers }),
-			).not.toBeNull();
-		}
-	});
+			});
+			const { headers } = await signInWithTestUser();
+			const other = await signInWithTestUser();
+			const before = await auth.api.getSession({ headers });
+			await client.changeEmail(
+				{ newEmail: "session@example.com" },
+				{ headers },
+			);
+			const response = await auth.handler(new Request(url, { headers }));
+			expect(response.headers.get("location")).toBe("/");
+			const refreshedHeaders = new Headers({
+				cookie: response.headers
+					.getSetCookie()
+					.map((cookie) => cookie.split(";")[0])
+					.join("; "),
+			});
+			const current = await auth.api.getSession({ headers: refreshedHeaders });
+			expect(current?.user.email).toBe("session@example.com");
+			if (revokeOtherSessions) {
+				expect(current?.session.token).not.toBe(before?.session.token);
+				expect(await auth.api.getSession({ headers })).toBeNull();
+				expect(
+					await auth.api.getSession({ headers: other.headers }),
+				).toBeNull();
+			} else {
+				expect(current?.session.token).toBe(before?.session.token);
+				expect(
+					await auth.api.getSession({ headers: other.headers }),
+				).not.toBeNull();
+			}
+		},
+	);
 
-	it.each([
-		"delivered",
-		"sync-failure",
-		"async-failure",
-	] as const)("keeps public pending state indistinguishable for occupied and free addresses with %s", async (delivery) => {
-		const send = vi.fn(() => {
-			if (delivery === "sync-failure")
-				throw new Error("delivery failed synchronously");
-			if (delivery === "async-failure")
-				return Promise.reject(new Error("delivery failed asynchronously"));
-			return Promise.resolve();
-		});
-		const requested = vi.fn();
-		const { auth, client, signInWithTestUser } = await getTestInstance({
-			user: {
-				changeEmail: {
-					enabled: true,
-					strategy: "verification-table",
-					sendVerificationEmail: send,
-					onChangeEmailRequested: requested,
+	it.each(["delivered", "sync-failure", "async-failure"] as const)(
+		"keeps public pending state indistinguishable for occupied and free addresses with %s",
+		async (delivery) => {
+			const send = vi.fn(() => {
+				if (delivery === "sync-failure")
+					throw new Error("delivery failed synchronously");
+				if (delivery === "async-failure")
+					return Promise.reject(new Error("delivery failed asynchronously"));
+				return Promise.resolve();
+			});
+			const requested = vi.fn();
+			const { auth, client, signInWithTestUser } = await getTestInstance({
+				user: {
+					changeEmail: {
+						enabled: true,
+						strategy: "verification-table",
+						sendVerificationEmail: send,
+						onChangeEmailRequested: requested,
+					},
 				},
-			},
-		});
-		await (await auth.$context).internalAdapter.createUser(
-			{ name: "Other", email: "occupied@example.com" },
-			{ method: "test" },
-		);
-		const { headers } = await signInWithTestUser();
-		for (const newEmail of ["available@example.com", "occupied@example.com"]) {
-			const result = await client.changeEmail({ newEmail }, { headers });
-			expect(result.error).toBeNull();
-			expect(result.data).toEqual({ status: true });
-			expect(
-				(await client.getSession({ fetchOptions: { headers } })).data?.user,
-			).toMatchObject({ pendingEmail: newEmail });
-			expect(
-				(await client.cancelEmailChange({}, { headers })).data?.status,
-			).toBe(true);
-		}
-		expect(send).toHaveBeenCalledOnce();
-		expect(requested).toHaveBeenCalledTimes(2);
-	});
+			});
+			await (await auth.$context).internalAdapter.createUser(
+				{ name: "Other", email: "occupied@example.com" },
+				{ method: "test" },
+			);
+			const { headers } = await signInWithTestUser();
+			for (const newEmail of [
+				"available@example.com",
+				"occupied@example.com",
+			]) {
+				const result = await client.changeEmail({ newEmail }, { headers });
+				expect(result.error).toBeNull();
+				expect(result.data).toEqual({ status: true });
+				expect(
+					(await client.getSession({ fetchOptions: { headers } })).data?.user,
+				).toMatchObject({ pendingEmail: newEmail });
+				expect(
+					(await client.cancelEmailChange({}, { headers })).data?.status,
+				).toBe(true);
+			}
+			expect(send).toHaveBeenCalledOnce();
+			expect(requested).toHaveBeenCalledTimes(2);
+		},
+	);
 
 	it("exposes the pending address in inferred users while keeping its request identity private", async () => {
 		const options = {

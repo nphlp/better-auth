@@ -7,6 +7,7 @@ import { runWithTransaction } from "@better-auth/core/context";
 import type { User } from "@better-auth/core/db";
 import { APIError, BASE_ERROR_CODES } from "@better-auth/core/error";
 import { generateId } from "@better-auth/core/utils/id";
+import { appendQueryParams } from "@better-auth/core/utils/url";
 import * as z from "zod";
 import {
 	deleteSessionCookie,
@@ -18,11 +19,11 @@ import { generateRandomString } from "../../crypto";
 import { parseUserInput, parseUserOutput } from "../../db/schema";
 import type { AdditionalUserFieldsInput } from "../../types";
 import { getDate } from "../../utils/date";
-import { safeCloneRequest } from "../../utils/request";
 import {
 	assertPasswordNotTooLong,
 	assertPasswordNotTooShort,
 } from "../../utils/password";
+import { safeCloneRequest } from "../../utils/request";
 import { originCheck } from "../middlewares";
 import {
 	createEmailVerificationToken,
@@ -331,9 +332,12 @@ export const changePassword = createAuthEndpoint(
 				if (revokeOtherSessions) {
 					await ctx.context.internalAdapter.deleteUserSessions(session.user.id);
 				}
-				const updatedAccount = await ctx.context.internalAdapter.updateAccount(account.id, {
-					password: passwordHash,
-				});
+				const updatedAccount = await ctx.context.internalAdapter.updateAccount(
+					account.id,
+					{
+						password: passwordHash,
+					},
+				);
 				if (!revokeOtherSessions) return { newSession: null, updatedAccount };
 				const created = await ctx.context.internalAdapter.createSession(
 					session.user.id,
@@ -361,11 +365,17 @@ export const changePassword = createAuthEndpoint(
 			token = newSession.token;
 		}
 
-		if (updatedAccount && ctx.context.options.emailAndPassword?.onPasswordChanged) {
-			const onPasswordChanged = ctx.context.options.emailAndPassword.onPasswordChanged;
-			await ctx.context.runInBackgroundOrAwait(Promise.resolve().then(() =>
-				onPasswordChanged({ user: session.user }, ctx.request),
-			));
+		if (
+			updatedAccount &&
+			ctx.context.options.emailAndPassword?.onPasswordChanged
+		) {
+			const onPasswordChanged =
+				ctx.context.options.emailAndPassword.onPasswordChanged;
+			await ctx.context.runInBackgroundOrAwait(
+				Promise.resolve().then(() =>
+					onPasswordChanged({ user: session.user }, ctx.request),
+				),
+			);
 		}
 
 		return ctx.json({
@@ -1227,9 +1237,10 @@ export const verifyEmailChange = createAuthEndpoint(
 	async (ctx) => {
 		const { userId, token } = ctx.params;
 		const callbackURL = ctx.query?.callbackURL || "/";
-		const errorURL = `${callbackURL}${
-			callbackURL.includes("?") ? "&" : "?"
-		}error=INVALID_TOKEN`;
+		const errorURL = appendQueryParams(
+			callbackURL,
+			new URLSearchParams({ error: "INVALID_TOKEN" }),
+		);
 
 		/**
 		 * Registered unconditionally so the typed API surface stays stable (same

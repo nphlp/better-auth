@@ -1366,81 +1366,84 @@ describe("oauth-proxy", async () => {
 			);
 		});
 
-		it("should work with database mode + UUID", async () => {
-			// This tests the scenario where:
-			// - storeStateStrategy is "database" (not cookie)
-			// - generateId: "uuid" is configured
-			// Passthrough mode should work without any issues
-			const { client, auth } = await getTestInstance(
-				{
-					plugins: [
-						oAuthProxy({
-							currentURL: "http://preview.example.com",
-						}),
-					],
-					socialProviders: {
-						google: {
-							clientId: "test",
-							clientSecret: "test",
+		it.runIf(process.env.BETTER_AUTH_TEST_POSTGRES_URL)(
+			"should work with database mode + UUID",
+			async () => {
+				// This tests the scenario where:
+				// - storeStateStrategy is "database" (not cookie)
+				// - generateId: "uuid" is configured
+				// Passthrough mode should work without any issues
+				const { client, auth } = await getTestInstance(
+					{
+						plugins: [
+							oAuthProxy({
+								currentURL: "http://preview.example.com",
+							}),
+						],
+						socialProviders: {
+							google: {
+								clientId: "test",
+								clientSecret: "test",
+							},
+						},
+						advanced: {
+							database: {
+								generateId: "uuid",
+							},
 						},
 					},
-					advanced: {
-						database: {
-							generateId: "uuid",
-						},
+					{
+						testWith: "postgres",
+						postgresURL: process.env.BETTER_AUTH_TEST_POSTGRES_URL,
 					},
-				},
-				{
-					testWith: "postgres",
-					postgresURL: process.env.BETTER_AUTH_TEST_POSTGRES_URL,
-				},
-			);
+				);
 
-			const { secret } = await auth.$context;
+				const { secret } = await auth.$context;
 
-			// Start OAuth flow
-			const res = await client.signIn.social(
-				{
-					provider: "google",
-					callbackURL: "/dashboard",
-				},
-				{
-					throw: true,
-				},
-			);
+				// Start OAuth flow
+				const res = await client.signIn.social(
+					{
+						provider: "google",
+						callbackURL: "/dashboard",
+					},
+					{
+						throw: true,
+					},
+				);
 
-			const state = new URL(res.url!).searchParams.get("state");
+				const state = new URL(res.url!).searchParams.get("state");
 
-			// Complete OAuth callback - this should work without UUID format errors
-			let encryptedProfile: string | null = null;
-			await client.$fetch(`/callback/google?code=test&state=${state}`, {
-				onError(context) {
-					const location = context.response.headers.get("location");
-					if (location && location.includes("profile=")) {
-						const url = new URL(location);
-						encryptedProfile = url.searchParams.get("profile");
-					}
-				},
-			});
+				// Complete OAuth callback - this should work without UUID format errors
+				let encryptedProfile: string | null = null;
+				await client.$fetch(`/callback/google?code=test&state=${state}`, {
+					onError(context) {
+						const location = context.response.headers.get("location");
+						if (location && location.includes("profile=")) {
+							const url = new URL(location);
+							encryptedProfile = url.searchParams.get("profile");
+						}
+					},
+				});
 
-			expect(encryptedProfile).toBeTruthy();
+				expect(encryptedProfile).toBeTruthy();
 
-			// Verify profile data structure
-			const decrypted = await symmetricDecrypt({
-				key: derivePurposeKey(secret, "oauth-proxy-profile"),
-				data: encryptedProfile!,
-			});
-			const payload = parseJSON<{
-				userInfo: unknown;
-				account: {
-					providerId: string;
-				};
-			}>(decrypted);
+				// Verify profile data structure
+				const decrypted = await symmetricDecrypt({
+					key: derivePurposeKey(secret, "oauth-proxy-profile"),
+					data: encryptedProfile!,
+				});
+				const payload = parseJSON<{
+					userInfo: unknown;
+					account: {
+						providerId: string;
+					};
+				}>(decrypted);
 
-			expect(payload.userInfo).toBeDefined();
-			expect(payload.account).toBeDefined();
-			expect(payload.account.providerId).toBe("google");
-		});
+				expect(payload.userInfo).toBeDefined();
+				expect(payload.account).toBeDefined();
+				expect(payload.account.providerId).toBe("google");
+			},
+		);
 
 		it("should reject payloads with missing required fields", async () => {
 			const { client, auth } = await getTestInstance({

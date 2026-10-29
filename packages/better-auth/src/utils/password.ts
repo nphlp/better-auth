@@ -48,9 +48,13 @@ export async function resetCredentialPassword(
 		if (ctx.context.options.emailAndPassword?.revokeSessionsOnPasswordReset) {
 			await ctx.context.internalAdapter.deleteUserSessions(userId);
 		}
-		await ctx.context.internalAdapter.setCredentialPassword(userId, passwordHash, {
-			overwrite: true,
-		});
+		await ctx.context.internalAdapter.setCredentialPassword(
+			userId,
+			passwordHash,
+			{
+				overwrite: true,
+			},
+		);
 	});
 }
 

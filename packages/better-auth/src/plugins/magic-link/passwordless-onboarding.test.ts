@@ -293,3 +293,39 @@ describe("explicit passwordless onboarding", () => {
 		).toBeNull();
 	});
 });
+
+/** @see https://github.com/advisories/GHSA-965c-763c-88jm */
+it("rejects OAuth state with signup metadata even when an identifier hasher collides", async () => {
+	const { auth, db } = await getTestInstance(
+		{
+			verification: {
+				storeIdentifier: {
+					type: "custom-hasher",
+					hash: async () => "synthetic-collision",
+				},
+			},
+			plugins: [
+				magicLink({ requireExplicitSignUp: true, sendMagicLink: () => {} }),
+			],
+		},
+		{ disableTestUser: true },
+	);
+	const context = await auth.$context;
+	const token = "synthetic-oauth-state";
+	await context.internalAdapter.createVerificationValue({
+		identifier: `auth-state:${token}`,
+		value: JSON.stringify({
+			type: "auth-state",
+			email: "target@example.com",
+			name: "Target",
+			signUp: { name: "Target", additionalFields: {} },
+		}),
+		expiresAt: new Date(Date.now() + 60_000),
+	});
+	const url = new URL(`${context.baseURL}/magic-link/verify`);
+	url.searchParams.set("token", token);
+	const response = await auth.handler(new Request(url));
+	expect(response.headers.get("location")).toContain("INVALID_TOKEN");
+	expect(await db.findMany({ model: "user" })).toHaveLength(0);
+	expect(await db.findMany({ model: "session" })).toHaveLength(0);
+});

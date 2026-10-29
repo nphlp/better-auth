@@ -39,44 +39,46 @@ describe("credential password mutation", () => {
 		expect(await internalAdapter.findAccounts(user.id)).toHaveLength(1);
 	});
 
-	it.each([
-		"create",
-		"update",
-	] as const)("fails when an account %s hook vetoes the mutation", async (operation) => {
-		let blocked = false;
-		const { auth } = await getTestInstance(
-			{
-				databaseHooks: {
-					account: {
-						[operation]: { before: async () => (blocked ? false : undefined) },
+	it.each(["create", "update"] as const)(
+		"fails when an account %s hook vetoes the mutation",
+		async (operation) => {
+			let blocked = false;
+			const { auth } = await getTestInstance(
+				{
+					databaseHooks: {
+						account: {
+							[operation]: {
+								before: async () => (blocked ? false : undefined),
+							},
+						},
 					},
 				},
-			},
-			{ disableTestUser: true, transaction: true },
-		);
-		const { internalAdapter } = await auth.$context;
-		const user = await internalAdapter.createUser(
-			{
-				name: "Ada",
-				email: "veto@example.com",
-				emailVerified: true,
-			},
-			{ method: "magic-link" },
-		);
-		if (operation === "update")
-			await internalAdapter.setCredentialPassword(user.id, "original-hash", {
-				overwrite: false,
-			});
-		blocked = true;
-		await expect(
-			internalAdapter.setCredentialPassword(user.id, "rejected-hash", {
-				overwrite: true,
-			}),
-		).rejects.toThrow("was not persisted");
-		expect(
-			(await internalAdapter.findCredentialAccount(user.id))?.password,
-		).toBe(operation === "update" ? "original-hash" : undefined);
-	});
+				{ disableTestUser: true, transaction: true },
+			);
+			const { internalAdapter } = await auth.$context;
+			const user = await internalAdapter.createUser(
+				{
+					name: "Ada",
+					email: "veto@example.com",
+					emailVerified: true,
+				},
+				{ method: "magic-link" },
+			);
+			if (operation === "update")
+				await internalAdapter.setCredentialPassword(user.id, "original-hash", {
+					overwrite: false,
+				});
+			blocked = true;
+			await expect(
+				internalAdapter.setCredentialPassword(user.id, "rejected-hash", {
+					overwrite: true,
+				}),
+			).rejects.toThrow("was not persisted");
+			expect(
+				(await internalAdapter.findCredentialAccount(user.id))?.password,
+			).toBe(operation === "update" ? "original-hash" : undefined);
+		},
+	);
 
 	it("rejects a required transaction before touching an unsupported database", async () => {
 		const { auth } = await getTestInstance(
